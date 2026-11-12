@@ -183,7 +183,7 @@ router.get('/mine', auth, async (req, res) =>
 /* ---------- admin: dashboard numbers ---------- */
 router.get('/stats', auth, can('dashboard', 'orders'), async (_req, res) => {
   const since = new Date(); since.setHours(0, 0, 0, 0); since.setDate(since.getDate() - 13);
-  const [byStatus, revenue, daily, lowStock, totalProducts, byMethod, unpaid] = await Promise.all([
+  const [byStatus, revenue, daily, lowStock, totalProducts, byMethod, unpaid, needsReview] = await Promise.all([
     Order.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
     Order.aggregate([{ $match: { status: { $nin: ['cancelled', 'returned'] } } }, { $group: { _id: null, sum: { $sum: '$total' }, n: { $sum: 1 } } }]),
     Order.aggregate([
@@ -194,6 +194,7 @@ router.get('/stats', auth, can('dashboard', 'orders'), async (_req, res) => {
     Product.countDocuments(),
     Order.aggregate([{ $group: { _id: '$paymentMethod', n: { $sum: 1 }, sum: { $sum: '$total' } } }]),
     Order.countDocuments({ 'payment.status': 'submitted' }),
+    permissionsOf(req.user).includes('fraud') ? Order.countDocuments({ 'risk.level': 'review', 'risk.reviewed': { $ne: true } }) : 0,
   ]);
   const days = [];
   for (let i = 0; i < 14; i++) {
@@ -207,7 +208,7 @@ router.get('/stats', auth, can('dashboard', 'orders'), async (_req, res) => {
     orders: revenue[0]?.n || 0,
     byStatus: Object.fromEntries(byStatus.map((s) => [s._id, s.n])),
     byMethod: Object.fromEntries(byMethod.map((s) => [s._id, { n: s.n, sum: s.sum }])),
-    awaitingVerification: unpaid,
+    awaitingVerification: unpaid, needsReview,
     days, lowStock, totalProducts,
   });
 });

@@ -10,7 +10,7 @@ import { track, gaItem } from './Analytics';
 import { api, taka } from '@/lib/api';
 import { DIVISIONS, PAY_LABELS, validPhone, zoneFor } from '@/lib/bd';
 import { saveLead } from '@/lib/attribution';
-import { advanceDue, placeOrder } from '@/lib/placeOrder';
+import { advanceDue, placeOrder, useAdvanceRequired } from '@/lib/placeOrder';
 
 // Shared by the /checkout page and the quick-checkout pop-up.
 export default function CheckoutForm({ compact = false, onDone }) {
@@ -34,13 +34,15 @@ export default function CheckoutForm({ compact = false, onDone }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const began = useRef(false);
+  const [hp, setHp] = useState(''); // honeypot: real people never see or fill this
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const discount = coupon?.discount || 0;
   const fee = feeFor(subtotal, f.zone);
   const total = subtotal - discount + fee;
   const manualNo = method.startsWith('manual_') ? pay.manual?.[method.replace('manual_', '')] : null;
-  const advance = advanceDue(pay, method, fee, total);
+  const advRequired = useAdvanceRequired(cart.map((i) => ({ product: i._id })), !!pay.codAdvance?.enabled);
+  const advance = advanceDue(pay, method, fee, total, advRequired);
 
   useEffect(() => {
     if (user) setF((x) => ({ ...x, name: x.name || user.name || '', phone: x.phone || user.phone || '', email: x.email || user.email || '', address: x.address || user.address || '' }));
@@ -53,7 +55,7 @@ export default function CheckoutForm({ compact = false, onDone }) {
     track('begin_checkout', { value: subtotal, items: cart.map(gaItem) });
   }, [cart, subtotal]);
   // incomplete-order capture: saved once the phone number is valid
-  useEffect(() => { saveLead({ ...f, items: cart.map((i) => ({ ...i, product: i._id })) }); }, [f.name, f.phone, f.address, f.district, cart]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { saveLead({ ...f, items: cart.map((i) => ({ ...i, product: i._id })) }); }, [f.name, f.phone, f.email, f.address, f.district, cart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const on = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const pickDistrict = (e) => {
@@ -81,7 +83,7 @@ export default function CheckoutForm({ compact = false, onDone }) {
         token, toast, router,
         body: {
           items: cart.map((i) => ({ product: i._id, variant: i.variant, qty: i.qty })), shipping: f, coupon: coupon?.code,
-          paymentMethod: method, saveAddress: save, ...(manualNo ? trx : {}),
+          paymentMethod: method, saveAddress: save, website: hp, ...(manualNo ? trx : {}),
           ...(advance ? { advanceMethod: advMethod, advanceSender: adv.sender, advanceTrxId: adv.trxId } : {}),
         },
         sourceExtra: { kind: compact ? 'quick' : 'store' },
@@ -95,6 +97,7 @@ export default function CheckoutForm({ compact = false, onDone }) {
 
   return (
     <form className={'cform' + (compact ? ' compact' : '')} onSubmit={submit}>
+      <input className="hp-field" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={hp} onChange={(e) => setHp(e.target.value)} />
       <div className="cf-main">
         <section className="cf-sec">
           <h3><span className="num">1</span>Delivery details</h3>

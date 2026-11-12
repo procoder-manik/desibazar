@@ -1,4 +1,5 @@
 'use client';
+import { useEffect, useState } from 'react';
 import { api } from './api';
 import { resetLeadKey, leadKey, source } from './attribution';
 import { track, gaItem } from '@/components/Analytics';
@@ -38,10 +39,23 @@ export function advanceMethods(pay) {
   ].filter(Boolean);
 }
 
-// Advance due for cash on delivery (mirror of backend/src/pricing.js advanceFor).
-export function advanceDue(pay, method, fee, total) {
+// Advance due for cash on delivery (mirror of backend/src/pricing.js advanceFor). `required` comes from useAdvanceRequired.
+export function advanceDue(pay, method, fee, total, required) {
   const a = pay.codAdvance;
-  if (method !== 'cod' || !a?.enabled) return 0;
+  if (method !== 'cod' || !a?.enabled || !required) return 0;
   const amt = a.type === 'fixed' ? Number(a.amount) || 0 : fee;
   return Math.max(0, Math.min(Math.round(amt), total));
+}
+
+// Asks the server whether this bag needs the advance (products can follow, require or skip the store setting).
+export function useAdvanceRequired(items, enabled) {
+  const [required, setRequired] = useState(false);
+  const sig = (items || []).map((i) => i.product || i._id).sort().join(',');
+  useEffect(() => {
+    if (!enabled || !sig) { setRequired(false); return undefined; }
+    let live = true;
+    api('/orders/advance-check', { method: 'POST', body: { items: sig.split(',').map((product) => ({ product })) } }).then((r) => live && setRequired(!!r.required)).catch(() => live && setRequired(true));
+    return () => { live = false; };
+  }, [sig, enabled]);
+  return required;
 }

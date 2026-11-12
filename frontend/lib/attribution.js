@@ -48,15 +48,24 @@ export function leadKey() {
 }
 export const resetLeadKey = () => { try { sessionStorage.removeItem('gb_lead'); } catch { /* ignore */ } };
 
+const authToken = () => { try { return JSON.parse(localStorage.getItem('gb_token')) || undefined; } catch { return undefined; } };
 let timer;
 let last = '';
-// Save the checkout as an incomplete order once the phone number is valid (debounced, only when something changed).
-export function saveLead({ name, phone, address, district, items, landing }) {
+// Save the bag / checkout as a follow-up lead once we can reach the person: a valid phone and/or e-mail
+// (typed at checkout, or on their account). Debounced, and only when something changed.
+// stage: 'cart' = items in the bag, 'checkout' = they started filling the form.
+export function saveLead({ name, phone, email, address, district, items, landing, stage = 'checkout' }) {
   const p = String(phone || '').replace(/[\s-]/g, '').replace(/^\+?88/, '');
-  if (!/^01[3-9]\d{8}$/.test(p)) return;
-  const body = { key: leadKey(), name, phone: p, address, district, landing, items: (items || []).map((i) => ({ product: i.product || i._id, qty: i.qty, price: i.price, variantLabel: i.variantLabel })) };
+  const em = String(email || '').trim();
+  const goodPhone = /^01[3-9]\d{8}$/.test(p);
+  const goodEmail = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(em);
+  if ((!goodPhone && !goodEmail) || !(items || []).length) return;
+  const body = {
+    key: leadKey(), stage, name, phone: goodPhone ? p : undefined, email: goodEmail ? em : undefined, address, district, landing,
+    items: (items || []).map((i) => ({ product: i.product || i._id, variant: i.variant, qty: i.qty, price: i.price, variantLabel: i.variantLabel })),
+  };
   const sig = JSON.stringify(body);
   if (sig === last) return;
   clearTimeout(timer);
-  timer = setTimeout(() => { last = sig; api('/leads', { method: 'POST', body }).catch(() => {}); }, 1500);
+  timer = setTimeout(() => { last = sig; api('/leads', { method: 'POST', token: authToken(), body }).catch(() => {}); }, 1500);
 }

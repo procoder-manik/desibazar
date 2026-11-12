@@ -10,7 +10,7 @@ import { api, taka } from '@/lib/api';
 import { PAY_LABELS, validPhone } from '@/lib/bd';
 import { vList, vPrice } from '@/lib/product';
 import { saveLead } from '@/lib/attribution';
-import { advanceDue, placeOrder } from '@/lib/placeOrder';
+import { advanceDue, placeOrder, useAdvanceRequired } from '@/lib/placeOrder';
 
 // Order form labels in Bangla or English (Admin → Landing pages → Checkout → Language).
 const T = {
@@ -63,6 +63,7 @@ export default function OnePageCheckout({ lp }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const began = useRef(false);
+  const [hp, setHp] = useState('');
 
   useEffect(() => { if (user) setF((x) => ({ ...x, name: x.name || user.name || '', phone: x.phone || user.phone || '', address: x.address || user.address || '' })); }, [user]);
 
@@ -76,7 +77,8 @@ export default function OnePageCheckout({ lp }) {
   const zone = zones.find((z) => z.key === f.zone) || zones[0];
   const fee = !lines.length || c.freeDelivery ? 0 : settings.shipping.freeOver && subtotal >= settings.shipping.freeOver ? 0 : zone?.fee || 0;
   const total = Math.max(0, subtotal - discount) + fee;
-  const advance = advanceDue(pay, method, fee, total);
+  const advRequired = useAdvanceRequired(lines.map((l) => ({ product: l.product })), !!pay.codAdvance?.enabled);
+  const advance = advanceDue(pay, method, fee, total, advRequired);
   const manualNo = method.startsWith('manual_') ? pay.manual?.[method.replace('manual_', '')] : null;
 
   useEffect(() => { setCoupon(null); setCouponMsg(''); }, [subtotal]);
@@ -110,7 +112,7 @@ export default function OnePageCheckout({ lp }) {
         body: {
           items: lines.map((l) => ({ product: l.product, variant: l.variant, qty: l.qty })),
           shipping: { name: f.name, phone: f.phone, address: f.address, zone: f.zone, district: '' }, coupon: coupon?.code, paymentMethod: method,
-          ...(manualNo ? trx : {}), ...(advance ? { advanceMethod: advMethod, advanceSender: adv.sender, advanceTrxId: adv.trxId } : {}),
+          website: hp, ...(manualNo ? trx : {}), ...(advance ? { advanceMethod: advMethod, advanceSender: adv.sender, advanceTrxId: adv.trxId } : {}),
         },
         sourceExtra: { kind: 'landing', landing: lp._id },
       });
@@ -119,6 +121,7 @@ export default function OnePageCheckout({ lp }) {
 
   return (
     <form className="opc glass" onSubmit={submit} id="order">
+      <input className="hp-field" name="website" tabIndex={-1} autoComplete="off" aria-hidden="true" value={hp} onChange={(e) => setHp(e.target.value)} />
       <div className="opc-head">
         <h2>{c.title || 'Fill in the form to order'}</h2>
         {c.note && <p className="opc-note">{c.note}</p>}

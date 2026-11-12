@@ -155,6 +155,8 @@ export function Shipping({ full, onSaved }) {
   const sh = s.v;
   const setZone = (i, patch) => s.setV({ ...sh, zones: sh.zones.map((z, k) => (k === i ? { ...z, ...patch } : z)) });
   const couriers = full.couriers;
+  const adv = { enabled: false, scope: 'all', type: 'delivery', amount: 0, note: '', ...(sh.advance || {}) };
+  const setAdv = (patch) => s.setV({ ...sh, advance: { ...adv, ...patch } });
 
   return (
     <>
@@ -183,6 +185,32 @@ export function Shipping({ full, onSaved }) {
         <div className="fields" style={{ marginTop: 14 }}>
           <label>Free delivery over (৳) <small>0 turns it off</small><input type="number" min="0" value={sh.freeOver} onChange={(e) => s.setV({ ...sh, freeOver: +e.target.value })} /></label>
         </div>
+      </div>
+      <div className="glass co-card" style={{ marginTop: 16 }}>
+        <div className="pay-row">
+          <div><b>Advance delivery charge (cash on delivery)</b><small>Customers pay the delivery charge, or a fixed amount, by bKash / Nagad / Rocket before the order is confirmed, and the rest to the rider. Cuts fake orders and returns. Turn it on or off any time.</small></div>
+          <span className={'pill-state' + (adv.enabled ? ' ok' : '')}>{adv.enabled ? 'On' : 'Off'}</span>
+          <label className="switch"><input type="checkbox" checked={!!adv.enabled} onChange={(e) => setAdv({ enabled: e.target.checked })} /><span /></label>
+        </div>
+        {adv.enabled && (
+          <>
+            <div className="seg" style={{ margin: '14px 0 4px' }}>
+              <button type="button" className={adv.scope === 'all' ? 'on' : ''} style={{ textTransform: 'none' }} onClick={() => setAdv({ scope: 'all' })}>All products</button>
+              <button type="button" className={adv.scope === 'products' ? 'on' : ''} style={{ textTransform: 'none' }} onClick={() => setAdv({ scope: 'products' })}>Only products I choose</button>
+            </div>
+            <p className="fine left">{adv.scope === 'all' ? 'Every cash on delivery order needs the advance. In a product, set “Advance delivery charge” to “Never” to skip it for that product.' : 'Only orders that include a product set to “Always” (Products → edit → Advance delivery charge) need the advance. Other products order as normal cash on delivery.'}</p>
+            <div className="fields" style={{ marginTop: 10 }}>
+              <label>Advance amount
+                <select value={adv.type || 'delivery'} onChange={(e) => setAdv({ type: e.target.value })}>
+                  <option value="delivery">The delivery charge</option><option value="fixed">A fixed amount</option>
+                </select>
+              </label>
+              {adv.type === 'fixed' && <label>Fixed amount (৳)<input type="number" min="1" value={adv.amount || ''} onChange={(e) => setAdv({ amount: +e.target.value })} /></label>}
+              <label className="full">Message at checkout <small className="muted">(optional)</small><input value={adv.note || ''} onChange={(e) => setAdv({ note: e.target.value })} placeholder="ডেলিভারি চার্জ অগ্রিম পরিশোধ করে অর্ডার কনফার্ম করুন। বাকি টাকা পণ্য হাতে পেয়ে দিবেন।" /></label>
+            </div>
+            <p className="fine left">Customers pay the advance to your Send Money numbers (Settings → Payments){full.integrations.bkash || full.integrations.sslcommerz ? ', or online with bKash / SSLCommerz' : ''}. Manual advances are verified in Orders; online ones are verified automatically. With free delivery and the type “delivery charge”, nothing is asked.</p>
+          </>
+        )}
       </div>
       <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Couriers</h3>
@@ -222,25 +250,7 @@ export function Payments({ full, onSaved }) {
         {row('bkash', 'bKash checkout', `Direct bKash tokenized payment${ig.bkashSandbox ? ' (sandbox mode)' : ''}.`, <Status ok={ig.bkash} />)}
         {row('manual', 'Send Money (manual)', 'Customer sends money to your number and enters the transaction ID. You verify it in Orders.', <span className="pill-state">Manual</span>)}
       </div>
-      <div className="glass co-card" style={{ marginTop: 16 }}>
-        <div className="pay-row">
-          <div><b>Cash on delivery: take an advance first</b><small>The customer pays the delivery charge (or a fixed amount) by bKash / Nagad / Rocket before the order is confirmed, and the rest to the rider. Cuts fake orders and returns.</small></div>
-          <span className={'pill-state' + (p.codAdvance?.enabled ? ' ok' : '')}>{p.codAdvance?.enabled ? 'On' : 'Off'}</span>
-          <label className="switch"><input type="checkbox" checked={!!p.codAdvance?.enabled} onChange={(e) => s.setV({ ...p, codAdvance: { type: 'delivery', amount: 0, note: '', ...p.codAdvance, enabled: e.target.checked } })} /><span /></label>
-        </div>
-        {p.codAdvance?.enabled && (
-          <div className="fields" style={{ marginTop: 12 }}>
-            <label>Advance amount
-              <select value={p.codAdvance.type || 'delivery'} onChange={(e) => s.setV({ ...p, codAdvance: { ...p.codAdvance, type: e.target.value } })}>
-                <option value="delivery">The delivery charge</option><option value="fixed">A fixed amount</option>
-              </select>
-            </label>
-            {p.codAdvance.type === 'fixed' && <label>Fixed amount (৳)<input type="number" min="1" value={p.codAdvance.amount || ''} onChange={(e) => s.setV({ ...p, codAdvance: { ...p.codAdvance, amount: +e.target.value } })} /></label>}
-            <label className="full">Message at checkout <small className="muted">(optional)</small><input value={p.codAdvance.note || ''} onChange={(e) => s.setV({ ...p, codAdvance: { ...p.codAdvance, note: e.target.value } })} placeholder="ডেলিভারি চার্জ অগ্রিম পরিশোধ করে অর্ডার কনফার্ম করুন। বাকি টাকা পণ্য হাতে পেয়ে দিবেন।" /></label>
-            <p className="fine left full">Customers can pay the advance to the Send Money numbers below{ig.bkash || ig.sslcommerz ? ', or online with bKash / SSLCommerz' : ''}. Verify it in Orders (manual) or it is verified automatically (online). Orders with free delivery need no advance when the type is “delivery charge”.</p>
-          </div>
-        )}
-      </div>
+      <p className="fine left" style={{ margin: "12px 4px 0" }}>Want customers to pay the delivery charge first on cash on delivery? That switch is now in <b>Shipping → Advance delivery charge</b>.</p>
       <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Send Money numbers</h3>
         <div className="fields three">

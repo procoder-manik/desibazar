@@ -342,3 +342,16 @@
 .float-cart.has .fc-top svg { animation: fc-bump .5s var(--ease); }
 @keyframes fc-bump { 50% { transform: scale(1.18); } }
 @media (max-width: 680px) { .float-cart { width: 66px; } .float-cart:hover { width: 66px; } .float-cart .fc-top { padding: 9px 4px 8px; } .float-cart b { font-size: 12px; } }
+
+/* honeypot: off-screen, invisible to people and screen readers */
+.hp-field { position: absolute !important; left: -9999px; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+/* fraud risk badges and abandoned-cart contact buttons */
+.risk-pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700; background: color-mix(in srgb, var(--okc) 14%, transparent); color: var(--okc); }
+.risk-pill.review { background: color-mix(in srgb, var(--sand) 28%, transparent); color: #7a5a14; }
+.risk-pill.block { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.risk-pill.done { opacity: .55; }
+.contact-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.contact-btns .btn.sm { height: 30px; padding: 0 12px; font-size: 12px; text-transform: none; }
+.chips .pillselect { margin-left: auto; }
+

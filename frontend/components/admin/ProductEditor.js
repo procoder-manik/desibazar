@@ -5,7 +5,7 @@ import { CloseIcon, PlusIcon, TrashIcon } from '../Icons';
 import { api } from '@/lib/api';
 import { SeoFields } from './Seo';
 
-const blank = { name: '', category: '', price: '', salePrice: '', stock: 0, unit: '1 kg', image: '', images: [], description: '', details: [], variants: [], featured: false, active: true };
+const blank = { name: '', category: '', price: '', salePrice: '', stock: 0, unit: '1 kg', image: '', images: [], description: '', details: [], variants: [], featured: false, active: true, advanceShipping: 'default' };
 const emptyVariant = { color: '', hex: '#9fb59a', size: '', price: '', salePrice: '', stock: 0, image: '' };
 
 // Full product editor: gallery, specifications and colour / size variants with their own price & stock.
@@ -58,6 +58,13 @@ export default function ProductEditor({ product, cats, onClose, onSaved }) {
               <label>Base price (৳)<input type="number" min="0" value={p.price} onChange={set('price')} /></label>
               <label>Sale price (৳)<input type="number" min="0" value={p.salePrice} onChange={set('salePrice')} placeholder="optional" /></label>
               <label>{hasVariants ? 'Stock (total of options)' : 'Stock'}<input type="number" min="0" value={hasVariants ? p.variants.reduce((s, v) => s + (+v.stock || 0), 0) : p.stock} disabled={hasVariants} onChange={set('stock')} /></label>
+              <label className="full">Advance delivery charge <small className="muted">(cash on delivery; the switch is in Shipping)</small>
+                <select value={p.advanceShipping || 'default'} onChange={set('advanceShipping')}>
+                  <option value="default">Follow the store setting</option>
+                  <option value="require">Always take the delivery charge in advance for this product</option>
+                  <option value="exempt">Never ask for an advance for this product</option>
+                </select>
+              </label>
               <label className="full">Description<textarea rows={3} value={p.description} onChange={set('description')} /></label>
             </div>
             <div className="btnrow left">

@@ -95,6 +95,17 @@ MAIL_FROM="Ghorer Bazar <yourstore@gmail.com>"`}</pre>
         {EVENTS.map(([k, t, d]) => (
           <div key={k} className="pay-row"><div><b>{t}</b><small>{d}</small></div><span /><label className="switch"><input type="checkbox" checked={!!e[k]} onChange={(x) => setE({ ...e, [k]: x.target.checked })} /><span /></label></div>
         ))}
+        <div className="pay-row"><div><b>Abandoned bag reminder</b><small>E-mail people who left items in the bag or stopped at checkout, with a link that restores their bag. Needs the e-mail they typed or have on their account.</small></div><span /><label className="switch"><input type="checkbox" checked={e.abandoned !== false} onChange={(x) => setE({ ...e, abandoned: x.target.checked })} /><span /></label></div>
+        {e.abandoned !== false && (
+          <div className="fields" style={{ marginTop: 10 }}>
+            <label>Send the reminder
+              <select value={e.abandonedDelay || 0} onChange={(x) => setE({ ...e, abandonedDelay: +x.target.value })}>
+                <option value={0}>Instantly, as soon as we have their e-mail</option><option value={10}>After 10 minutes</option><option value={30}>After 30 minutes</option><option value={60}>After 1 hour</option><option value={180}>After 3 hours</option><option value={1440}>After 24 hours</option>
+              </select>
+            </label>
+            <p className="fine left">One reminder per person. It is not sent if they order first, and the same address gets at most one a day. With a delay, the timer restarts each time the visitor changes their bag.</p>
+          </div>
+        )}
         <div className="fields" style={{ marginTop: 10 }}><label>Admin e-mail for new-order alerts<input type="email" value={e.adminEmail || ''} onChange={(x) => setE({ ...e, adminEmail: x.target.value })} placeholder="owner@yourstore.com" /></label></div>
         <p className="fine left">Customers get order e-mails when they enter an e-mail at checkout or have one on their account.</p>
       </div>

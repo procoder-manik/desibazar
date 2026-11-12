@@ -11,7 +11,8 @@ const STATUSES = ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 
 const PAY = ['unpaid', 'submitted', 'paid', 'failed', 'refunded'];
 
 function OrderPanel({ o, couriers, steadfastReady, onSaved, onClose }) {
-  const { token, toast } = useApp();
+  const { token, toast, user } = useApp();
+  const perms = user?.permissions || [];
   const [c, setC] = useState({ name: o.courier?.name || '', consignmentId: o.courier?.consignmentId || '', trackingCode: o.courier?.trackingCode || '', trackingUrl: o.courier?.trackingUrl || '' });
   const [note, setNote] = useState(o.adminNote || '');
   const [busy, setBusy] = useState(false);
@@ -22,6 +23,13 @@ function OrderPanel({ o, couriers, steadfastReady, onSaved, onClose }) {
   const patch = async (body, msg) => {
     setBusy(true); setErr('');
     try { onSaved(await api('/orders/' + o._id, { method: 'PATCH', token, body })); toast(msg); }
+    catch (e) { setErr(e.message); }
+    setBusy(false);
+  };
+  const blockCustomer = async (what) => {
+    if (!confirm(`Block ${o.shipping.phone}${what === 'both' ? ' and this network' : ''} from ordering?${what === 'both' ? '\n\nCareful: many customers on mobile data share one network address, so blocking it can stop innocent people too. Block the phone only unless you are sure.' : ''}${o.status === 'pending' ? '\n\nThis pending order will be cancelled.' : ''}`)) return;
+    setBusy(true); setErr('');
+    try { await api('/fraud/block', { method: 'POST', token, body: { orderId: o._id, what, cancel: true, reason: 'Blocked from order ' + orderNo(o) } }); toast('Blocked'); onSaved(await api('/orders/' + o._id, { token })); }
     catch (e) { setErr(e.message); }
     setBusy(false);
   };
@@ -67,6 +75,18 @@ function OrderPanel({ o, couriers, steadfastReady, onSaved, onClose }) {
           {o.payment?.status === 'refunded' && <p className="fine left">Refunded ৳{o.payment.refundAmount || o.total}{o.payment.refundedAt ? ` on ${new Date(o.payment.refundedAt).toLocaleDateString('en-GB')}` : ''}. Change the status above to take it back (e.g. back to Paid).</p>}
           {o.payment?.status === 'submitted' && <button className="btn sm block" disabled={busy} onClick={() => patch({ paymentStatus: 'paid', ...(o.status === 'pending' && { status: 'confirmed' }) }, 'Payment verified')}>Verify payment & confirm</button>}
         </section>
+        {o.risk?.score > 0 && (
+          <section>
+            <h5>Fraud check <span className={'risk-pill ' + (o.risk.level === 'review' && !o.risk.reviewed ? 'review' : 'ok')}>{o.risk.score} / 100</span></h5>
+            {o.risk.reasons?.length ? <ul className="hist">{o.risk.reasons.map((r, k) => <li key={k}>{r}</li>)}</ul> : <p className="fine left">No warning signs.</p>}
+            {o.risk.ip && <p className="fine left">Network: {o.risk.ip}</p>}
+            <div className="btnrow left" style={{ marginTop: 8 }}>
+              {o.risk.level === 'review' && !o.risk.reviewed && <button className="btn ghost sm" disabled={busy} onClick={() => patch({ riskReviewed: true }, 'Marked as checked')}>Looks fine</button>}
+              {perms.includes('fraud') && <button className="btn ghost sm danger" disabled={busy} onClick={() => blockCustomer('phone')}>Block this phone</button>}
+              {perms.includes('fraud') && o.risk.ip && <button className="btn ghost sm danger" disabled={busy} onClick={() => blockCustomer('both')}>Block phone + network</button>}
+            </div>
+          </section>
+        )}
         {o.advance?.required && (
           <section>
             <h5>Advance · {PAY_LABELS[o.advance.method] || o.advance.method}</h5>
@@ -140,7 +160,7 @@ function OrderPanel({ o, couriers, steadfastReady, onSaved, onClose }) {
 
 export default function Orders({ initial = {}, couriers, steadfastReady, onChanged }) {
   const { token } = useApp();
-  const [f, setF] = useState({ status: '', payment: '', q: '', ...initial });
+  const [f, setF] = useState({ status: '', payment: '', q: '', risk: '', ...initial });
   const [q, setQ] = useState(initial.q || '');
   const [list, setList] = useState(null);
   const [open, setOpen] = useState(null);
@@ -163,6 +183,7 @@ export default function Orders({ initial = {}, couriers, steadfastReady, onChang
       <div className="chips">
         <button className={!f.status ? 'on' : ''} onClick={() => setF({ ...f, status: '' })}>All</button>
         {STATUSES.map((s) => <button key={s} className={f.status === s ? 'on' : ''} onClick={() => setF({ ...f, status: s })}>{s}</button>)}
+        <button className={f.risk ? 'on' : ''} onClick={() => setF({ ...f, risk: f.risk ? '' : 'review' })}>Needs review</button>
       </div>
       <div className="tablewrap glass">
         <table>
@@ -175,7 +196,8 @@ export default function Orders({ initial = {}, couriers, steadfastReady, onChang
                 <td><b>{taka(o.total)}</b></td>
                 <td><small>{PAY_LABELS[o.paymentMethod] || o.paymentMethod}</small><br /><span className={'paystatus ' + o.payment?.status}>{o.payment?.status === 'submitted' ? 'verify' : o.payment?.status}</span>
                   {o.advance?.required && <><br /><span className={'paystatus ' + o.advance.status}>advance {o.advance.status === 'submitted' ? 'verify' : o.advance.status}</span></>}
-                  {o.source?.kind === 'landing' && <><br /><small className="muted">landing page</small></>}</td>
+                  {o.source?.kind === 'landing' && <><br /><small className="muted">landing page</small></>}
+                  {o.risk?.level === 'review' && <><br /><span className={'risk-pill review' + (o.risk.reviewed ? ' done' : '')} title={(o.risk.reasons || []).join(' · ')}>{o.risk.reviewed ? 'checked' : 'review'} {o.risk.score}</span></>}</td>
                 <td><small>{o.courier?.name ? (couriers.find((x) => x.key === o.courier.name)?.name || o.courier.name) : '–'}</small>{o.courier?.consignmentId && <><br /><small className="muted">{o.courier.consignmentId}</small></>}</td>
                 <td><span className={'status ' + o.status}>{o.status}</span></td>
               </tr>

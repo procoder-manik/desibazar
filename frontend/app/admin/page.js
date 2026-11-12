@@ -11,17 +11,18 @@ import Import from '@/components/admin/Import';
 import Leads from '@/components/admin/Leads';
 import Staff from '@/components/admin/Staff';
 import Seo from '@/components/admin/Seo';
+import Fraud from '@/components/admin/Fraud';
 import Blog from '@/components/admin/Blog';
 import LandingPages from '@/components/admin/LandingPages';
 import { Coupons, Products } from '@/components/admin/Catalog';
 import { Customers, Emails } from '@/components/admin/People';
 import { Appearance, Payments, Shipping, Store } from '@/components/admin/StoreSettings';
-import { BookIcon, BoxIcon, CardIcon, ChartIcon, DatabaseIcon, EditIcon, GridIcon, KeyIcon, LayoutIcon, MailIcon, PaletteIcon, PhoneIcon, SearchIcon, StoreIcon, TagIcon, TruckIcon, UsersIcon } from '@/components/Icons';
+import { BookIcon, BoxIcon, CardIcon, ChartIcon, DatabaseIcon, EditIcon, GridIcon, KeyIcon, LayoutIcon, ShieldIcon, MailIcon, PaletteIcon, PhoneIcon, SearchIcon, StoreIcon, TagIcon, TruckIcon, UsersIcon } from '@/components/Icons';
 import { api } from '@/lib/api';
 
 // [tab, label, icon, permission needed]. "owner" = the store owner only.
 const NAV = [
-  ['Sales', [['dashboard', 'Dashboard', ChartIcon, 'dashboard'], ['orders', 'Orders', BoxIcon, 'orders'], ['leads', 'Incomplete orders', PhoneIcon, 'leads'], ['customers', 'Customers', UsersIcon, 'customers']]],
+  ['Sales', [['dashboard', 'Dashboard', ChartIcon, 'dashboard'], ['orders', 'Orders', BoxIcon, 'orders'], ['leads', 'Abandoned carts', PhoneIcon, 'leads'], ['fraud', 'Fraud protection', ShieldIcon, 'fraud'], ['customers', 'Customers', UsersIcon, 'customers']]],
   ['Catalog', [['products', 'Products', GridIcon, 'products'], ['coupons', 'Coupons', TagIcon, 'coupons']]],
   ['Marketing', [['landing', 'Landing pages', LayoutIcon, 'landing'], ['blog', 'Blog', BookIcon, 'blog'], ['seo', 'SEO', SearchIcon, 'seo']]],
   ['Storefront', [['content', 'Content', EditIcon, 'content'], ['popups', 'Pop-ups', TagIcon, 'content'], ['appearance', 'Appearance', PaletteIcon, 'appearance']]],
@@ -63,7 +64,7 @@ export default function Admin() {
   if (!isStaff) return <div className="empty glass" style={{ marginTop: 28 }}><h3>Staff access only</h3><p>Sign in with an owner or staff account.</p><Link href="/login?next=/admin" className="btn">Sign in</Link></div>;
   if (!tab) return null;
   const title = ALL.find(([k]) => k === tab)?.[1];
-  const badge = { orders: stats?.byStatus?.pending, payments: stats?.awaitingVerification };
+  const badge = { orders: stats?.byStatus?.pending, payments: stats?.awaitingVerification, fraud: stats?.needsReview };
 
   return (
     <div className="admin">
@@ -90,6 +91,7 @@ export default function Admin() {
         {tab === 'dashboard' && <Dashboard goOrders={(f) => { setOrderFilter(f); go('orders'); }} />}
         {tab === 'orders' && full && <Orders key={JSON.stringify(orderFilter)} initial={orderFilter} couriers={full.couriers} steadfastReady={full.integrations.steadfast} onChanged={loadStats} />}
         {tab === 'leads' && <Leads />}
+        {full && tab === 'fraud' && <Fraud full={full} onSaved={loadSettings} goOrders={(f) => { setOrderFilter(f); go('orders'); }} />}
         {tab === 'customers' && <Customers />}
         {tab === 'products' && <Products />}
         {tab === 'coupons' && <Coupons />}

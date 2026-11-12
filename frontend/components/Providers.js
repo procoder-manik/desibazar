@@ -7,7 +7,7 @@ import QuickCheckout from './QuickCheckout';
 import QuickView from './QuickView';
 import { track } from './Analytics';
 import { CheckIcon } from './Icons';
-import { captureSource } from '@/lib/attribution';
+import { captureSource, saveLead } from '@/lib/attribution';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -58,9 +58,22 @@ export default function Providers({ children, initialSettings }) {
     if (t) api('/auth/me', { token: t }).then((r) => setUser(r.user)).catch(() => setToken(null));
     api('/settings').then(setSettings).catch(() => {});
     captureSource(); // remember ad / UTM source for the order
+    // the link in the abandoned-bag e-mail: /checkout?recover=TOKEN puts their bag back
+    const rec = new URLSearchParams(window.location.search).get('recover');
+    if (rec && /^[a-f0-9]{8,40}$/i.test(rec)) {
+      api('/leads/recover/' + rec).then((r) => {
+        if (r.cart?.length) { setCart(r.cart); toast('Welcome back! Your bag is ready.'); }
+        const u = new URL(window.location.href); u.searchParams.delete('recover'); window.history.replaceState(null, '', u.pathname + u.search);
+      }).catch(() => {});
+    }
     setReady(true);
   }, []);
   useEffect(() => { applyAppearance(settings.appearance); }, [settings.appearance]);
+  // a signed-in customer's bag is saved for follow-up (their account has a phone and often an e-mail)
+  useEffect(() => {
+    if (!ready || !user?.phone || !cart.length) return;
+    saveLead({ name: user.name, phone: user.phone, email: user.email, items: cart.map((i) => ({ ...i, product: i._id })), stage: 'cart' });
+  }, [cart, user, ready]);
 
   useEffect(() => { if (ready) write('gb_cart', cart); }, [cart, ready]);
   useEffect(() => { if (ready) write('gb_wish', wish); }, [wish, ready]);
