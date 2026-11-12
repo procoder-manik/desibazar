@@ -1,11 +1,15 @@
 const crypto = require('crypto');
 const router = require('express').Router();
-const { Order, Product, Coupon, User, ORDER_STATUSES, PAYMENT_METHODS } = require('../models');
-const { auth, admin, optionalAuth } = require('../middleware/auth');
-const { getSettings, deliveryFee, couponDiscount } = require('../pricing');
+const { Order, Product, Coupon, User, LandingPage, ORDER_STATUSES, PAYMENT_METHODS } = require('../models');
+const { auth, can, optionalAuth, permissionsOf } = require('../middleware/auth');
+const { getSettings, deliveryFee, couponDiscount, advanceFor } = require('../pricing');
 const { steadfast, COURIERS } = require('../gateways');
+const { str, isId } = require('../util');
+const { convert: convertLeads } = require('./leads');
+const capi = require('../capi');
 
 const { orderEmail, adminNewOrder } = require('../mailer');
+const MANUAL = ['manual_bkash', 'manual_nagad', 'manual_rocket'];
 
 // Atomically take stock for one line (variant-level when the line has a variant).
 const take = (l) => (l.variant
@@ -17,7 +21,7 @@ const giveBack = (l) => (l.variant
 const restock = (order) => Promise.all(order.items.map(giveBack));
 const normPhone = (p) => String(p || '').replace(/[\s-]/g, '').replace(/^\+?88/, '');
 const canSee = (o, req) =>
-  (req.user && (String(o.user) === String(req.user._id) || req.user.role === 'admin')) ||
+  (req.user && (String(o.user) === String(req.user._id) || permissionsOf(req.user).includes('orders'))) ||
   (req.query.key && o.accessKey && req.query.key === o.accessKey);
 
 // which payment methods are switched on and usable right now
@@ -46,6 +50,15 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
     return res.status(400).json({ error: 'Enter the sender number and transaction ID of your payment' });
 
   if (items.length > 50) return res.status(400).json({ error: 'Too many items in one order' });
+
+  // Orders from a landing page may use that page's special prices and free delivery.
+  const src = req.body.source || {};
+  const landing = isId(src.landing) ? await LandingPage.findOne({ _id: src.landing, status: 'published' }).lean() : null;
+  const offerPrice = (productId, variantId) => {
+    const hit = landing?.products?.find((x) => String(x.product) === String(productId) && (!x.variant || String(x.variant) === String(variantId || '')));
+    return hit && hit.price > 0 ? hit.price : null;
+  };
+
   const products = await Product.find({ _id: { $in: items.map((i) => i.product) }, active: { $ne: false } });
   const lines = [];
   for (const i of items) {
@@ -56,11 +69,11 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
       const v = p.variants.id(i.variant);
       if (!v) return res.status(400).json({ error: `Please choose an option for ${p.name}` });
       if (v.stock < qty) return res.status(400).json({ error: `Only ${v.stock} left of ${p.name} (${v.label})` });
-      const price = v.salePrice || v.price || p.salePrice || p.price;
+      const price = offerPrice(p._id, v._id) || v.salePrice || v.price || p.salePrice || p.price;
       lines.push({ product: p._id, variant: v._id, variantLabel: v.label, name: p.name, image: v.image || p.image, unit: v.size || p.unit, qty, price });
     } else {
       if (p.stock < qty) return res.status(400).json({ error: `Only ${p.stock} left of ${p.name}` });
-      lines.push({ product: p._id, name: p.name, image: p.image, unit: p.unit, qty, price: p.salePrice || p.price });
+      lines.push({ product: p._id, name: p.name, image: p.image, unit: p.unit, qty, price: offerPrice(p._id) || p.salePrice || p.price });
     }
   }
 
@@ -75,6 +88,23 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
   }
   const ship = deliveryFee(settings, subtotal, shipping.zone);
   if (ship.error) return res.status(400).json({ error: ship.error });
+  if (landing?.checkout?.freeDelivery) ship.fee = 0;
+
+  // Cash on delivery with an advance (delivery charge or fixed amount) paid now.
+  const total = subtotal - discount + ship.fee;
+  const advanceAmount = advanceFor(settings, paymentMethod, ship.fee, total);
+  let advance = { required: false, amount: 0 };
+  if (advanceAmount > 0) {
+    const m = String(req.body.advanceMethod || '');
+    const okManual = MANUAL.includes(m) && settings.payments.manual && settings.payments.manualNumbers?.[m.replace('manual_', '')];
+    const okOnline = (m === 'bkash' || m === 'sslcommerz') && methodAllowed(settings, m);
+    if (!okManual && !okOnline) return res.status(400).json({ error: `Pay the advance of ৳${advanceAmount} to confirm a cash on delivery order` });
+    if (okManual && (!String(req.body.advanceTrxId || '').trim() || !String(req.body.advanceSender || '').trim()))
+      return res.status(400).json({ error: 'Enter the number you sent the advance from and the transaction ID' });
+    advance = okManual
+      ? { required: true, amount: advanceAmount, method: m, status: 'submitted', trxId: str(req.body.advanceTrxId, 40).trim().toUpperCase(), sender: normPhone(req.body.advanceSender) }
+      : { required: true, amount: advanceAmount, method: m, status: 'unpaid' };
+  }
 
   // reserve stock atomically; roll back if any line fails
   const done = [];
@@ -87,7 +117,7 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
     done.push(l);
   }
 
-  const total = subtotal - discount + ship.fee;
+  const utm = src.utm && typeof src.utm === 'object' ? Object.fromEntries(['source', 'medium', 'campaign', 'content', 'term'].map((k) => [k, str(src.utm[k], 120)])) : undefined;
   const order = await Order.create({
     user: req.user?._id,
     accessKey: crypto.randomBytes(16).toString('hex'),
@@ -100,15 +130,22 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
     payment: paymentMethod.startsWith('manual_')
       ? { status: 'submitted', trxId: req.body.trxId.trim(), sender: normPhone(req.body.sender), amount: total }
       : { status: 'unpaid' },
+    advance,
+    source: {
+      kind: landing ? 'landing' : src.kind === 'quick' ? 'quick' : 'store', landing: landing?._id, landingSlug: landing?.slug, utm,
+      referrer: str(src.referrer, 300), fbclid: str(src.fbclid, 300), gclid: str(src.gclid, 300),
+    },
     coupon: couponDoc?.code,
     subtotal, discount, deliveryFee: ship.fee, total,
-    history: [{ status: 'pending' }],
+    history: [{ status: 'pending', note: advance.status === 'submitted' ? `Advance ৳${advance.amount} sent by ${advance.method.replace('manual_', '')} (${advance.trxId}), waiting for verification` : undefined }],
   });
   if (couponDoc) await Coupon.updateOne({ _id: couponDoc._id }, { $inc: { used: 1 } });
   if (req.user && saveAddress) await User.updateOne({ _id: req.user._id }, { address: shipping.address.trim(), area: ship.zone.key === 'outside' ? 'outside' : 'inside' });
   if (!order.shipping.email && req.user?.email) order.shipping.email = req.user.email; // send the receipt to the account e-mail
   orderEmail(settings, order, 'orderPlaced');
   adminNewOrder(settings, order);
+  convertLeads(order, str(req.body.leadKey, 64));
+  capi.purchase(settings, order, req); // Meta Conversions API (server-side), deduplicated with the browser pixel
   res.status(201).json(order);
 });
 
@@ -116,7 +153,7 @@ router.get('/mine', auth, async (req, res) =>
   res.json(await Order.find({ user: req.user._id }).select('-accessKey').sort('-createdAt')));
 
 /* ---------- admin: dashboard numbers ---------- */
-router.get('/stats', auth, admin, async (_req, res) => {
+router.get('/stats', auth, can('dashboard', 'orders'), async (_req, res) => {
   const since = new Date(); since.setHours(0, 0, 0, 0); since.setDate(since.getDate() - 13);
   const [byStatus, revenue, daily, lowStock, totalProducts, byMethod, unpaid] = await Promise.all([
     Order.aggregate([{ $group: { _id: '$status', n: { $sum: 1 } } }]),
@@ -148,7 +185,7 @@ router.get('/stats', auth, admin, async (_req, res) => {
 });
 
 /* ---------- admin: list with search + filters ---------- */
-router.get('/', auth, admin, async (req, res) => {
+router.get('/', auth, can('orders'), async (req, res) => {
   const { status, payment, q } = req.query;
   const f = {};
   if (status) f.status = status;
@@ -188,12 +225,19 @@ router.patch('/:id/cancel', optionalAuth, async (req, res) => {
 });
 
 /* ---------- admin: update status / payment / courier / note ---------- */
-router.patch('/:id', auth, admin, async (req, res) => {
+router.patch('/:id', auth, can('orders'), async (req, res) => {
   const o = await Order.findById(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
-  const { status, paymentStatus, courier, adminNote, refundAmount, note } = req.body;
+  const { status, paymentStatus, courier, adminNote, refundAmount, note, advanceStatus } = req.body;
   const CLOSED = ['cancelled', 'returned'];
   const events = [];
+
+  if (advanceStatus && o.advance?.required && advanceStatus !== o.advance.status) {
+    if (!['unpaid', 'submitted', 'paid', 'failed'].includes(advanceStatus)) return res.status(400).json({ error: 'Invalid advance status' });
+    o.advance.status = advanceStatus;
+    if (advanceStatus === 'paid') o.advance.paidAt = new Date();
+    o.history.push({ status: o.status, note: `Advance ৳${o.advance.amount} ${advanceStatus === 'paid' ? 'verified' : `marked ${advanceStatus}`}` });
+  }
 
   if (status && status !== o.status) {
     if (!ORDER_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status' });
@@ -245,7 +289,7 @@ router.patch('/:id', auth, admin, async (req, res) => {
 });
 
 // book with a courier API (Steadfast) and move the order to "shipped"
-router.post('/:id/book', auth, admin, async (req, res) => {
+router.post('/:id/book', auth, can('orders'), async (req, res) => {
   const o = await Order.findById(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
   if (['cancelled', 'returned', 'delivered'].includes(o.status)) return res.status(400).json({ error: `Order is ${o.status}` });
@@ -261,7 +305,7 @@ router.post('/:id/book', auth, admin, async (req, res) => {
   res.json(o);
 });
 
-router.post('/:id/courier-status', auth, admin, async (req, res) => {
+router.post('/:id/courier-status', auth, can('orders'), async (req, res) => {
   const o = await Order.findById(req.params.id);
   if (!o?.courier?.consignmentId || o.courier.name !== 'steadfast') return res.status(400).json({ error: 'No Steadfast booking on this order' });
   o.courier.status = await steadfast.status(o.courier.consignmentId);

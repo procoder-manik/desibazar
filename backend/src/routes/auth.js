@@ -2,13 +2,16 @@ const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
-const { auth } = require('../middleware/auth');
+const { auth, permissionsOf } = require('../middleware/auth');
 const { limits } = require('../security');
 const { getSettings } = require('../pricing');
 const { accountEmail } = require('../mailer');
 
 const sign = (u) => jwt.sign({ id: u._id }, process.env.JWT_SECRET || 'dev-secret', { expiresIn: '30d' });
-const pub = (u) => ({ id: u._id, name: u.name, phone: u.phone, email: u.email, role: u.role, address: u.address, area: u.area });
+const pub = (u) => ({
+  id: u._id, name: u.name, phone: u.phone, email: u.email, role: u.role, address: u.address, area: u.area,
+  staffRole: u.staffRole?.name, permissions: permissionsOf(u),
+});
 const normPhone = (p) => String(p || '').replace(/[\s-]/g, '').replace(/^\+?88/, '');
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 12);
 const strong = (p) => typeof p === 'string' && p.length >= 8 && /[A-Za-z]/.test(p) && /\d/.test(p);
@@ -27,10 +30,11 @@ router.post('/register', limits.auth, async (req, res) => {
 });
 
 router.post('/login', limits.auth, async (req, res) => {
-  const u = await User.findOne({ phone: normPhone(req.body.phone) });
+  const u = await User.findOne({ phone: normPhone(req.body.phone) }).populate('staffRole');
   // same message and similar timing whether or not the number exists
   const ok = await bcrypt.compare(String(req.body.password || ''), u?.password || DUMMY_HASH);
   if (!u || !ok) return res.status(401).json({ error: 'Wrong mobile number or password' });
+  if (u.active === false) return res.status(403).json({ error: 'This account has been switched off. Contact the store owner.' });
   u.lastLoginAt = new Date(); await u.save();
   accountEmail(await getSettings(), u, 'login');
   res.json({ token: sign(u), user: pub(u) });

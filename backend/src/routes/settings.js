@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { auth, admin } = require('../middleware/auth');
+const { auth, permissionsOf, isStaff } = require('../middleware/auth');
 const { getSettings, resetSettings } = require('../pricing');
 const { ssl, bkash, steadfast, COURIERS } = require('../gateways');
 const mailer = require('../mailer');
@@ -15,6 +15,10 @@ const OPTIONS = {
   categories: ['carousel', 'grid', 'pills'],
   footer: ['classic', 'minimal', 'dark', 'centered'],
 };
+// Storefront pages whose title / description / image can be set in Admin → SEO.
+const SEO_PAGES = ['home', 'shop', 'blog', 'help', 'cart', 'checkout', 'login', 'register', 'wishlist', 'compare'];
+// Which permission is needed to save each part of the settings.
+const SLICE_PERM = { store: 'store', appearance: 'appearance', shipping: 'shipping', payments: 'payments', content: 'content', emails: 'emails', integrations: 'store', backups: 'data', seo: 'seo' };
 
 // merge saved content over the defaults so newly added fields always exist
 const contentOf = (s) => {
@@ -22,25 +26,32 @@ const contentOf = (s) => {
   const d = DEFAULT_CONTENT;
   return { ...d, ...c, bar: { ...d.bar, ...(c.bar || {}) }, perksEnabled: c.perksEnabled !== false, hero: { ...d.hero, ...(c.hero || {}) }, promo: { ...d.promo, ...(c.promo || {}) }, sections: { ...d.sections, ...(c.sections || {}) }, newsletter: { ...d.newsletter, ...(c.newsletter || {}) }, perks: c.perks?.length ? c.perks : d.perks };
 };
+const seoView = (s) => {
+  const v = s.toObject ? s.toObject().seo || {} : s.seo || {};
+  return { title: v.title || '', titleTemplate: v.titleTemplate || '', description: v.description || '', keywords: v.keywords || '', image: v.image || '', pages: v.pages || {} };
+};
+
+// Integration fields the storefront needs (never secrets like the Conversions API token).
+const PUBLIC_INTEGRATIONS = ['gaId', 'fbPixelId', 'gtmId', 'adsId', 'adsLabel', 'tiktokPixelId', 'clarityId', 'gscVerification', 'bingVerification', 'fbDomainVerification',
+  'headScripts', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'tidioKey', 'whatsapp', 'messenger'];
 
 function publicView(s) {
   const p = s.payments;
+  const ig = s.integrations || {};
   return {
     store: s.store,
     appearance: s.appearance,
     content: contentOf(s),
+    seo: seoView(s),
     shipping: { freeOver: s.shipping.freeOver, zones: s.shipping.zones.filter((z) => z.active !== false) },
     payments: {
       cod: p.cod,
       sslcommerz: p.sslcommerz && ssl.configured(),
       bkash: p.bkash && bkash.configured(),
       manual: p.manual ? Object.fromEntries(Object.entries(p.manualNumbers || {}).filter(([, v]) => v)) : {},
+      codAdvance: { enabled: !!p.codAdvance?.enabled, type: p.codAdvance?.type || 'delivery', amount: p.codAdvance?.amount || 0, note: p.codAdvance?.note || '' },
     },
-    integrations: {
-      gaId: s.integrations?.gaId || '', fbPixelId: s.integrations?.fbPixelId || '',
-      chat: s.integrations?.chat || 'none', tawkProperty: s.integrations?.tawkProperty || '', tawkWidget: s.integrations?.tawkWidget || 'default',
-      crispId: s.integrations?.crispId || '', whatsapp: s.integrations?.whatsapp || '', messenger: s.integrations?.messenger || '',
-    },
+    integrations: Object.fromEntries(PUBLIC_INTEGRATIONS.map((k) => [k, ig[k] || (k === 'chat' ? 'none' : k === 'tawkWidget' ? 'default' : '')])),
   };
 }
 
@@ -64,27 +75,96 @@ router.get('/settings', async (_req, res) => {
   res.json(v);
 });
 
-router.get('/settings/admin', auth, admin, async (_req, res) => {
+router.get('/settings/admin', auth, async (req, res) => {
+  if (!isStaff(req.user)) return res.status(403).json({ error: 'Staff only' });
   const s = await getSettings();
+  const obj = s.toObject();
+  const ig = obj.integrations || {};
   res.json({
-    ...s.toObject(),
+    ...obj,
     content: contentOf(s),
+    seo: seoView(s),
+    seoPages: SEO_PAGES,
     integrations: {
-      ...(s.toObject().integrations || {}),
+      ...ig, fbCapiToken: '', fbCapiSet: !!ig.fbCapiToken, // the token is write-only
       sslcommerz: ssl.configured(), bkash: bkash.configured(), steadfast: steadfast.configured(), smtp: mailer.configured(),
       sslSandbox: process.env.SSLCZ_SANDBOX !== 'false', bkashSandbox: process.env.BKASH_SANDBOX !== 'false',
     },
     couriers: Object.entries(COURIERS).map(([key, c]) => ({ key, name: c.name, api: !!c.api })),
     options: OPTIONS,
+    permissions: permissionsOf(req.user),
+    owner: req.user.role === 'admin',
   });
 });
 
 const str = (v, max = 300) => (typeof v === 'string' ? v.slice(0, max) : v);
+const bad = (msg) => Object.assign(new Error(msg), { status: 400 });
 
-router.put('/settings', auth, admin, async (req, res) => {
+function integrationsOf(input, cur, owner) {
+  const pick = (k, re, msg, max = 200) => {
+    const v = input[k] === undefined ? cur[k] || '' : String(input[k] ?? '').trim().slice(0, max);
+    if (v && re && !re.test(v)) throw bad(msg);
+    return v;
+  };
+  // Search Console / Bing / Facebook give either the bare code or the whole <meta> tag: keep only the code.
+  const verify = (k) => {
+    const raw = input[k] === undefined ? cur[k] || '' : String(input[k] ?? '').trim();
+    const m = raw.match(/content=["']([^"']+)["']/i);
+    const v = (m ? m[1] : raw).trim();
+    if (v && !/^[A-Za-z0-9_\-.:=+/]{6,120}$/.test(v)) throw bad(`${k === 'gscVerification' ? 'Google Search Console' : k === 'bingVerification' ? 'Bing' : 'Facebook domain'} verification code looks wrong`);
+    return v;
+  };
+  return {
+    gaId: pick('gaId', /^G-[A-Z0-9]{4,15}$/i, 'Google Analytics ID looks like G-XXXXXXXXXX'),
+    gtmId: pick('gtmId', /^GTM-[A-Z0-9]{4,12}$/i, 'Google Tag Manager ID looks like GTM-XXXXXXX'),
+    adsId: pick('adsId', /^AW-\d{6,15}$/i, 'Google Ads ID looks like AW-123456789'),
+    adsLabel: pick('adsLabel', /^[A-Za-z0-9_-]{4,40}$/, 'Google Ads conversion label is letters and numbers, e.g. AbC-D_efG123'),
+    fbPixelId: pick('fbPixelId', /^\d{6,20}$/, 'Meta Pixel ID is a number'),
+    fbCapiToken: input.fbCapiToken === undefined ? cur.fbCapiToken || '' : String(input.fbCapiToken || '').trim().slice(0, 400),
+    fbTestCode: pick('fbTestCode', /^TEST\d{3,10}$/i, 'Meta test event code looks like TEST12345'),
+    tiktokPixelId: pick('tiktokPixelId', /^[A-Z0-9]{10,30}$/i, 'TikTok Pixel ID is letters and numbers, e.g. CABC123DEF456GHI789'),
+    clarityId: pick('clarityId', /^[a-z0-9]{6,20}$/i, 'Microsoft Clarity project ID is letters and numbers'),
+    gscVerification: verify('gscVerification'),
+    bingVerification: verify('bingVerification'),
+    fbDomainVerification: verify('fbDomainVerification'),
+    // raw HTML in <head>: only the owner may change it
+    headScripts: owner && input.headScripts !== undefined ? String(input.headScripts || '').slice(0, 20000) : cur.headScripts || '',
+    chat: ['none', 'tawk', 'crisp', 'tidio'].includes(input.chat) ? input.chat : cur.chat || 'none',
+    tawkProperty: pick('tawkProperty', /^[a-f0-9]{24}$/i, 'tawk.to Property ID is the 24-character code in your widget link'),
+    tawkWidget: pick('tawkWidget', /^[a-z0-9]{1,20}$/i, 'tawk.to Widget ID looks like "default" or "1h2abc3de"') || 'default',
+    crispId: pick('crispId', /^[a-f0-9-]{36}$/i, 'Crisp Website ID looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'),
+    tidioKey: pick('tidioKey', /^[a-z0-9]{20,40}$/i, 'Tidio public key is the 32-character code in your Tidio script link'),
+    whatsapp: pick('whatsapp', /^\+?\d{10,15}$/, 'WhatsApp number: digits with country code, e.g. 8801711000000').replace('+', ''),
+    messenger: pick('messenger', /^[A-Za-z0-9.]{3,60}$/, 'Messenger: your Facebook page username'),
+  };
+}
+
+function seoOf(input, cur) {
+  const t = (v, max) => String(v ?? '').trim().slice(0, max);
+  const pages = {};
+  for (const k of SEO_PAGES) {
+    const p = (input.pages || {})[k] ?? (cur.pages || {})[k];
+    if (p && (p.title || p.description || p.image || p.noindex)) pages[k] = { title: t(p.title, 120), description: t(p.description, 320), image: t(p.image, 600), noindex: !!p.noindex };
+  }
+  const tpl = t(input.titleTemplate ?? cur.titleTemplate, 120);
+  if (tpl && !tpl.includes('%s')) throw bad('The title template must contain %s where the page title goes, e.g. "%s | Desi Bazar"');
+  return {
+    title: t(input.title ?? cur.title, 120), titleTemplate: tpl, description: t(input.description ?? cur.description, 320),
+    keywords: t(input.keywords ?? cur.keywords, 300), image: t(input.image ?? cur.image, 600), pages,
+  };
+}
+
+router.put('/settings', auth, async (req, res) => {
+  const mine = permissionsOf(req.user);
+  const denied = Object.keys(req.body || {}).filter((k) => SLICE_PERM[k] && !mine.includes(SLICE_PERM[k]));
+  if (!mine.length || denied.length) return res.status(403).json({ error: 'You do not have permission for this' });
+  if (req.method !== 'GET') {
+    const { AuditLog } = require('../models');
+    res.on('finish', () => AuditLog.create({ user: req.user._id, userName: req.user.name, method: 'PUT', path: `/api/settings (${Object.keys(req.body).join(', ')})`, ip: req.ip, status: res.statusCode }).catch(() => {}));
+  }
   const s = await getSettings();
   const cur = s.toObject();
-  const { store, appearance, shipping, payments, content, emails, integrations, backups } = req.body;
+  const { store, appearance, shipping, payments, content, emails, integrations, backups, seo } = req.body;
 
   if (appearance) {
     for (const k of Object.keys(OPTIONS)) if (appearance[k] && !OPTIONS[k].includes(appearance[k])) return res.status(400).json({ error: `Unknown ${k}: ${appearance[k]}` });
@@ -123,32 +203,21 @@ router.put('/settings', auth, admin, async (req, res) => {
     }
     s.shipping = { ...cur.shipping, ...shipping };
   }
-  if (payments) s.payments = { ...cur.payments, ...payments, manualNumbers: { ...cur.payments.manualNumbers, ...(payments.manualNumbers || {}) } };
+  if (payments) {
+    const a = { ...(cur.payments.codAdvance || {}), ...(payments.codAdvance || {}) };
+    const codAdvance = { enabled: !!a.enabled, type: a.type === 'fixed' ? 'fixed' : 'delivery', amount: Math.max(0, Math.round(Number(a.amount) || 0)), note: String(a.note || '').slice(0, 300) };
+    if (codAdvance.enabled && codAdvance.type === 'fixed' && !codAdvance.amount) return res.status(400).json({ error: 'Enter the fixed advance amount' });
+    s.payments = { ...cur.payments, ...payments, codAdvance, manualNumbers: { ...cur.payments.manualNumbers, ...(payments.manualNumbers || {}) } };
+    const p = s.payments;
+    const canAdvance = p.manual && Object.values(p.manualNumbers || {}).some(Boolean) || (p.bkash && bkash.configured()) || (p.sslcommerz && ssl.configured());
+    if (codAdvance.enabled && !canAdvance) return res.status(400).json({ error: 'To take an advance, add a bKash / Nagad / Rocket Send Money number (or connect bKash / SSLCommerz) first' });
+  }
   if (emails) {
     if (emails.adminEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emails.adminEmail)) return res.status(400).json({ error: 'Admin e-mail is not valid' });
     s.emails = { ...cur.emails, ...emails };
   }
-  if (integrations) {
-    const keep = (k) => (integrations[k] === undefined ? (cur.integrations || {})[k] || '' : String(integrations[k] || '').trim());
-    const ga = keep('gaId'), px = keep('fbPixelId');
-    if (ga && !/^G-[A-Z0-9]{4,15}$/i.test(ga)) return res.status(400).json({ error: 'Google Analytics ID looks like G-XXXXXXXXXX' });
-    if (px && !/^\d{6,20}$/.test(px)) return res.status(400).json({ error: 'Meta Pixel ID is a number' });
-    const cur2 = cur.integrations || {};
-    const pick = (k, re, msg) => {
-      const v = integrations[k] === undefined ? cur2[k] || '' : String(integrations[k]).trim();
-      if (v && re && !re.test(v)) throw Object.assign(new Error(msg), { status: 400 });
-      return v;
-    };
-    s.integrations = {
-      gaId: ga, fbPixelId: px,
-      chat: ['none', 'tawk', 'crisp'].includes(integrations.chat) ? integrations.chat : cur2.chat || 'none',
-      tawkProperty: pick('tawkProperty', /^[a-f0-9]{24}$/i, 'tawk.to Property ID is the 24-character code in your widget link'),
-      tawkWidget: pick('tawkWidget', /^[a-z0-9]{1,20}$/i, 'tawk.to Widget ID looks like "default" or "1h2abc3de"') || 'default',
-      crispId: pick('crispId', /^[a-f0-9-]{36}$/i, 'Crisp Website ID looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'),
-      whatsapp: pick('whatsapp', /^\+?\d{10,15}$/, 'WhatsApp number: digits with country code, e.g. 8801711000000').replace('+', ''),
-      messenger: pick('messenger', /^[A-Za-z0-9.]{3,60}$/, 'Messenger: your Facebook page username'),
-    };
-  }
+  if (integrations) s.integrations = integrationsOf(integrations, cur.integrations || {}, req.user.role === 'admin');
+  if (seo) { s.seo = seoOf(seo, cur.seo || {}); s.markModified('seo'); }
   if (backups) s.backups = { ...cur.backups, auto: !!backups.auto };
   await s.save();
   resetSettings();

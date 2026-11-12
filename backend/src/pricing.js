@@ -31,3 +31,17 @@ function couponDiscount(c, subtotal) {
 }
 
 module.exports = { getSettings, resetSettings, deliveryFee, couponDiscount };
+
+// Advance to collect now for a cash-on-delivery order (0 when the feature is off or nothing is due).
+function advanceFor(settings, method, fee, total) {
+  const a = settings.payments?.codAdvance;
+  if (method !== 'cod' || !a?.enabled) return 0;
+  const amt = a.type === 'fixed' ? Number(a.amount) || 0 : fee;
+  return Math.max(0, Math.min(Math.round(amt), total));
+}
+
+// What an online payment for this order should charge: the advance for COD orders, otherwise the full total.
+const dueOnline = (o) => (o.paymentMethod === 'cod' && o.advance?.required && o.advance.status !== 'paid' ? o.advance.amount : o.total);
+
+module.exports.advanceFor = advanceFor;
+module.exports.dueOnline = dueOnline;

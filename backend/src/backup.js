@@ -5,7 +5,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 const models = require('./models');
 
-const COLLECTIONS = ['User', 'Category', 'Product', 'Review', 'Coupon', 'Order', 'Subscriber', 'Settings', 'Popup'];
+const COLLECTIONS = ['User', 'Role', 'Category', 'Product', 'Review', 'Coupon', 'Order', 'Subscriber', 'Settings', 'Popup', 'Post', 'LandingPage', 'Lead'];
 const DIR = process.env.BACKUP_DIR || path.join(__dirname, '..', 'backups');
 const KEEP = Number(process.env.BACKUP_KEEP || 14);
 
@@ -34,7 +34,7 @@ const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 function revive(v, key) {
   if (Array.isArray(v)) return v.map((x) => revive(x, key));
   if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, revive(x, k)]));
-  if (typeof v === 'string' && OID.test(v) && key && (key === '_id' || /^(user|product|category|order|variant)$/.test(key))) return new mongoose.Types.ObjectId(v);
+  if (typeof v === 'string' && OID.test(v) && key && (key === '_id' || /^(user|product|category|order|variant|staffRole|landing|products)$/.test(key))) return new mongoose.Types.ObjectId(v);
   if (typeof v === 'string' && ISO.test(v)) return new Date(v);
   return v;
 }

@@ -6,12 +6,12 @@ const ssl = {
   configured: () => !!(env('SSLCZ_STORE_ID') && env('SSLCZ_STORE_PASSWD')),
   base: () => (env('SSLCZ_SANDBOX', 'true') === 'true' ? 'https://sandbox.sslcommerz.com' : 'https://securepay.sslcommerz.com'),
 
-  async init({ order, apiUrl }) {
+  async init({ order, apiUrl, amount = order.total }) {
     const s = order.shipping;
     const body = new URLSearchParams({
       store_id: env('SSLCZ_STORE_ID'),
       store_passwd: env('SSLCZ_STORE_PASSWD'),
-      total_amount: String(order.total),
+      total_amount: String(amount),
       currency: 'BDT',
       tran_id: String(order._id),
       success_url: `${apiUrl}/api/payments/sslcommerz/return`,
@@ -68,10 +68,10 @@ const bkash = {
     });
     return r.json();
   },
-  async create({ order, apiUrl }) {
+  async create({ order, apiUrl, amount = order.total }) {
     const d = await bkash.call('/create', {
       mode: '0011', payerReference: order.shipping.phone, callbackURL: `${apiUrl}/api/payments/bkash/callback`,
-      amount: String(order.total), currency: 'BDT', intent: 'sale', merchantInvoiceNumber: String(order._id),
+      amount: String(amount), currency: 'BDT', intent: 'sale', merchantInvoiceNumber: String(order._id),
     });
     if (!d.bkashURL) throw new Error(d.statusMessage || 'bKash could not start the payment');
     return { url: d.bkashURL, ref: d.paymentID };
@@ -99,7 +99,7 @@ const steadfast = {
   base: () => env('STEADFAST_BASE', 'https://portal.packzy.com/api/v1'),
   headers: () => ({ 'Api-Key': env('STEADFAST_API_KEY'), 'Secret-Key': env('STEADFAST_SECRET_KEY'), 'Content-Type': 'application/json' }),
   async create(order) {
-    const due = order.payment?.status === 'paid' ? 0 : order.total;
+    const due = order.payment?.status === 'paid' ? 0 : order.total - (order.advance?.status === 'paid' ? order.advance.amount || 0 : 0);
     const r = await fetch(`${steadfast.base()}/create_order`, {
       method: 'POST', headers: steadfast.headers(),
       body: JSON.stringify({

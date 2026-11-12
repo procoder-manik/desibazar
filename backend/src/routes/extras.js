@@ -1,7 +1,7 @@
 // Coupons, reviews and newsletter.
 const router = require('express').Router();
 const { Coupon, Review, Product, Order, Subscriber, Popup } = require('../models');
-const { auth, admin } = require('../middleware/auth');
+const { auth, can } = require('../middleware/auth');
 const { couponDiscount } = require('../pricing');
 
 /* ---------- coupons ---------- */
@@ -13,11 +13,11 @@ router.post('/coupons/validate', async (req, res) => {
   if (r.error) return res.status(400).json({ error: r.error });
   res.json({ code: c.code, discount: r.discount, type: c.type, value: c.value });
 });
-router.get('/coupons', auth, admin, async (_req, res) => res.json(await Coupon.find().sort('-createdAt')));
-router.post('/coupons', auth, admin, async (req, res) => res.status(201).json(await Coupon.create(req.body)));
-router.patch('/coupons/:id', auth, admin, async (req, res) =>
+router.get('/coupons', auth, can('coupons'), async (_req, res) => res.json(await Coupon.find().sort('-createdAt')));
+router.post('/coupons', auth, can('coupons'), async (req, res) => res.status(201).json(await Coupon.create(req.body)));
+router.patch('/coupons/:id', auth, can('coupons'), async (req, res) =>
   res.json(await Coupon.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true })));
-router.delete('/coupons/:id', auth, admin, async (req, res) => {
+router.delete('/coupons/:id', auth, can('coupons'), async (req, res) => {
   await Coupon.findByIdAndDelete(req.params.id);
   res.json({ ok: true });
 });
@@ -64,10 +64,10 @@ router.get('/popups/active', async (_req, res) => {
     $and: [{ $or: [{ startsAt: null }, { startsAt: { $lte: now } }] }, { $or: [{ endsAt: null }, { endsAt: { $gte: now } }] }],
   }).sort('-priority -updatedAt').limit(5).select('-name'));
 });
-router.get('/popups', auth, admin, async (_req, res) => res.json(await Popup.find().sort('-priority -updatedAt')));
-router.post('/popups', auth, admin, async (req, res) => res.status(201).json(await Popup.create(popupBody(req.body))));
-router.put('/popups/:id', auth, admin, async (req, res) => res.json(await Popup.findByIdAndUpdate(req.params.id, popupBody(req.body), { new: true, runValidators: true })));
-router.delete('/popups/:id', auth, admin, async (req, res) => { await Popup.findByIdAndDelete(req.params.id); res.json({ ok: true }); });
+router.get('/popups', auth, can('content'), async (_req, res) => res.json(await Popup.find().sort('-priority -updatedAt')));
+router.post('/popups', auth, can('content'), async (req, res) => res.status(201).json(await Popup.create(popupBody(req.body))));
+router.put('/popups/:id', auth, can('content'), async (req, res) => res.json(await Popup.findByIdAndUpdate(req.params.id, popupBody(req.body), { new: true, runValidators: true })));
+router.delete('/popups/:id', auth, can('content'), async (req, res) => { await Popup.findByIdAndDelete(req.params.id); res.json({ ok: true }); });
 
 /* ---------- newsletter ---------- */
 router.post('/newsletter', async (req, res) => {

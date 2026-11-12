@@ -1,12 +1,27 @@
 const mongoose = require('mongoose');
 const { Schema } = mongoose;
 
+// SEO fields shared by products, categories, blog posts and landing pages. Empty fields fall back to sensible defaults.
+const seoSchema = new Schema({
+    title: { type: String, maxlength: 120 }, description: { type: String, maxlength: 320 },
+    keywords: { type: String, maxlength: 300 }, image: String, canonical: String, noindex: { type: Boolean, default: false },
+  }, { _id: false });
+
+// Staff roles: a named set of admin-panel permissions (see PERMISSIONS in middleware/auth.js).
+const Role = mongoose.model('Role', new Schema({
+  name: { type: String, required: true, trim: true, unique: true, maxlength: 60 },
+  description: { type: String, maxlength: 200 },
+  permissions: [String],
+}, { timestamps: true }));
+
 const User = mongoose.model('User', new Schema({
   name: { type: String, required: true, trim: true, maxlength: 80 },
   phone: { type: String, required: true, unique: true },
   email: { type: String, trim: true, lowercase: true, maxlength: 120 },
   password: { type: String, required: true },
-  role: { type: String, enum: ['customer', 'admin'], default: 'customer' },
+  role: { type: String, enum: ['customer', 'staff', 'admin'], default: 'customer' }, // admin = owner (everything)
+  staffRole: { type: Schema.Types.ObjectId, ref: 'Role' },                          // permissions for role "staff"
+  active: { type: Boolean, default: true },
   address: String,
   area: { type: String, default: 'inside' },
   lastLoginAt: Date,
@@ -16,6 +31,8 @@ const Category = mongoose.model('Category', new Schema({
   name: { type: String, required: true, trim: true },
   slug: { type: String, required: true, unique: true },
   image: String,
+  description: String,
+  seo: seoSchema,
 }));
 
 // A variant is one buyable option of a product (a colour, a size, or both) with its own price and stock.
@@ -49,6 +66,8 @@ const Product = mongoose.model('Product', new Schema({
   rating: { type: Number, default: 0 },
   numReviews: { type: Number, default: 0 },
   sold: { type: Number, default: 0 },
+  seo: seoSchema,
+  sourceUrl: String, // where the product was imported from (Chrome extension)
 }, { timestamps: true }));
 
 const reviewSchema = new Schema({
@@ -100,6 +119,21 @@ const Order = mongoose.model('Order', new Schema({
     refundAmount: Number, refundedAt: Date,
   },
   courier: { name: String, consignmentId: String, trackingCode: String, trackingUrl: String, status: String, bookedAt: Date },
+  // Cash on delivery with the delivery charge (or a fixed amount) paid in advance.
+  advance: {
+    required: { type: Boolean, default: false },
+    amount: { type: Number, default: 0 },
+    status: { type: String, enum: ['unpaid', 'submitted', 'paid', 'failed'], default: 'unpaid' },
+    method: String, trxId: String, sender: String, gatewayRef: String, paidAt: Date,
+  },
+  // Where the order came from: a landing page, a blog post, and the ad campaign (UTM tags).
+  source: {
+    kind: { type: String, enum: ['store', 'landing', 'quick'], default: 'store' },
+    landing: { type: Schema.Types.ObjectId, ref: 'LandingPage', index: true },
+    landingSlug: String,
+    utm: { source: String, medium: String, campaign: String, content: String, term: String },
+    referrer: String, fbclid: String, gclid: String,
+  },
   coupon: String,
   subtotal: Number,
   discount: { type: Number, default: 0 },
@@ -108,6 +142,67 @@ const Order = mongoose.model('Order', new Schema({
   status: { type: String, enum: ORDER_STATUSES, default: 'pending', index: true },
   history: [{ status: String, note: String, at: { type: Date, default: Date.now } }],
   adminNote: String,
+}, { timestamps: true }));
+
+// Blog posts. Each post can target products: they are shown as cards in and below the article,
+// and the product page links back to the posts that target it.
+const Post = mongoose.model('Post', new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 160 },
+  slug: { type: String, required: true, unique: true },
+  excerpt: { type: String, maxlength: 400 },
+  content: { type: String, default: '' },        // Markdown; [product:slug] inserts a product card
+  cover: String,
+  author: String,
+  tags: [String],
+  products: [{ type: Schema.Types.ObjectId, ref: 'Product' }],
+  status: { type: String, enum: ['draft', 'published'], default: 'draft', index: true },
+  publishedAt: Date,
+  seo: seoSchema,
+  views: { type: Number, default: 0 },
+}, { timestamps: true }));
+
+// Sales landing pages with a one-page checkout (like CartFlows). Sections are an ordered list of blocks.
+const landingProduct = new Schema({
+  product: { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+  variant: Schema.Types.ObjectId,        // lock to one option, or leave empty to let the buyer choose
+  label: String,                          // e.g. "Himsagar mango · 5 kg"
+  badge: String,                          // e.g. "Best value"
+  price: { type: Number, min: 0 },        // special price on this page (optional)
+  qty: { type: Number, default: 1, min: 1 },
+  selected: { type: Boolean, default: false },
+}, { _id: true });
+const LandingPage = mongoose.model('LandingPage', new Schema({
+  title: { type: String, required: true, trim: true, maxlength: 160 },
+  slug: { type: String, required: true, unique: true },
+  status: { type: String, enum: ['draft', 'published'], default: 'draft', index: true },
+  accent: String,                         // optional colour for this page only
+  header: { type: String, enum: ['minimal', 'store', 'none'], default: 'minimal' },
+  sections: { type: [Schema.Types.Mixed], default: [] },
+  products: [landingProduct],
+  checkout: {
+    mode: { type: String, enum: ['multi', 'single'], default: 'multi' }, // multi = tick any, single = choose one
+    title: { type: String, default: 'Fill in the form to order' },
+    button: { type: String, default: 'Confirm order' },
+    allowQty: { type: Boolean, default: true },
+    coupon: { type: Boolean, default: true },
+    note: String,                          // text above the form, e.g. advance delivery charge policy
+    freeDelivery: { type: Boolean, default: false },
+    thankYou: String,
+  },
+  seo: seoSchema,
+  views: { type: Number, default: 0 },
+}, { timestamps: true, minimize: false }));
+
+// Incomplete checkouts: the customer typed a valid phone number but did not place the order.
+const Lead = mongoose.model('Lead', new Schema({
+  key: { type: String, index: true, unique: true },     // browser session id, so one visitor = one lead
+  name: String, phone: { type: String, index: true }, address: String, district: String,
+  items: [{ product: { type: Schema.Types.ObjectId, ref: 'Product' }, name: String, qty: Number, price: Number, variantLabel: String }],
+  total: Number,
+  source: { type: String, default: 'store' }, landing: { type: Schema.Types.ObjectId, ref: 'LandingPage' }, landingSlug: String,
+  status: { type: String, enum: ['open', 'called', 'converted', 'lost'], default: 'open', index: true },
+  note: String,
+  order: { type: Schema.Types.ObjectId, ref: 'Order' },
 }, { timestamps: true }));
 
 const Subscriber = mongoose.model('Subscriber', new Schema({
@@ -209,7 +304,22 @@ const Settings = mongoose.model('Settings', new Schema({
       ],
     },
   },
+  // Store-wide SEO. pages.<key> overrides the title / description / image of one storefront page.
+  seo: {
+    title: { type: String, default: '' },          // home page title; empty = "<store name> - <tagline>"
+    titleTemplate: { type: String, default: '' },  // e.g. "%s | Desi Bazar"; empty = "%s · <store name>"
+    description: { type: String, default: '' },
+    keywords: { type: String, default: '' },
+    image: { type: String, default: '' },          // default social sharing image
+    pages: { type: Schema.Types.Mixed, default: () => ({}) },
+  },
   payments: {
+    codAdvance: {
+      enabled: { type: Boolean, default: false },
+      type: { type: String, enum: ['delivery', 'fixed'], default: 'delivery' },
+      amount: { type: Number, default: 0, min: 0 },
+      note: { type: String, default: '' },
+    },
     cod: { type: Boolean, default: true },
     sslcommerz: { type: Boolean, default: true },
     bkash: { type: Boolean, default: true },
@@ -232,7 +342,19 @@ const Settings = mongoose.model('Settings', new Schema({
   integrations: {
     gaId: { type: String, default: '' },        // Google Analytics 4, e.g. G-XXXXXXX
     fbPixelId: { type: String, default: '' },   // Meta pixel id
-    chat: { type: String, default: 'none' },    // none | tawk | crisp
+    fbCapiToken: { type: String, default: '' }, // Meta Conversions API access token (server-side Purchase)
+    fbTestCode: { type: String, default: '' },  // Meta "Test events" code while testing
+    gtmId: { type: String, default: '' },       // Google Tag Manager, e.g. GTM-XXXXXXX
+    adsId: { type: String, default: '' },       // Google Ads conversion id, e.g. AW-123456789
+    adsLabel: { type: String, default: '' },    // Google Ads purchase conversion label
+    tiktokPixelId: { type: String, default: '' },
+    clarityId: { type: String, default: '' },   // Microsoft Clarity heatmaps
+    gscVerification: { type: String, default: '' },  // Google Search Console HTML tag content
+    bingVerification: { type: String, default: '' },
+    fbDomainVerification: { type: String, default: '' },
+    headScripts: { type: String, default: '' }, // any other tag the owner wants in <head> (owner only)
+    chat: { type: String, default: 'none' },    // none | tawk | crisp | tidio
+    tidioKey: { type: String, default: '' },
     tawkProperty: { type: String, default: '' },
     tawkWidget: { type: String, default: 'default' },
     crispId: { type: String, default: '' },
@@ -243,6 +365,6 @@ const Settings = mongoose.model('Settings', new Schema({
 }, { timestamps: true, minimize: false }));
 
 module.exports = {
-  User, Category, Product, Review, Coupon, Order, Subscriber, Settings, EmailLog, AuditLog, Popup,
+  User, Role, Category, Product, Review, Coupon, Order, Subscriber, Settings, EmailLog, AuditLog, Popup, Post, LandingPage, Lead,
   ORDER_STATUSES, PAYMENT_METHODS, DEFAULT_CONTENT,
 };

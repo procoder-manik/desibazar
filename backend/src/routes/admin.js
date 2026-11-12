@@ -3,19 +3,19 @@ const fs = require('fs');
 const path = require('path');
 const router = require('express').Router();
 const { Order, Product, User, Subscriber, EmailLog, AuditLog, Settings } = require('../models');
-const { auth, admin } = require('../middleware/auth');
+const { auth, admin, can } = require('../middleware/auth');
 const backup = require('../backup');
 const mailer = require('../mailer');
 const { getSettings, resetSettings } = require('../pricing');
 
-router.use(auth, admin);
+router.use(auth);
 
 const LIVE = { status: { $nin: ['cancelled', 'returned'] } };
 const TZ = '+06:00';
 const dayKey = (d) => new Date(d.getTime() + 6 * 3600e3).toISOString().slice(0, 10);
 
 /* ---------- reports for the dashboard ---------- */
-router.get('/report', async (req, res) => {
+router.get('/report', can('dashboard'), async (req, res) => {
   const days = Math.min(Math.max(+req.query.days || 30, 7), 365);
   // midnight in Dhaka (UTC+6) today, then back (days - 1) days
   const todayStart = Math.floor((Date.now() + 6 * 3600e3) / 864e5) * 864e5 - 6 * 3600e3;
@@ -61,7 +61,7 @@ router.get('/report', async (req, res) => {
 });
 
 /* ---------- customers ---------- */
-router.get('/customers', async (req, res) => {
+router.get('/customers', can('customers'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   const re = q && new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
   const users = await User.find(re ? { $or: [{ name: re }, { phone: re }, { email: re }] } : {}).select('-password').sort('-createdAt').limit(500).lean();
@@ -69,10 +69,11 @@ router.get('/customers', async (req, res) => {
   const by = Object.fromEntries(stats.map((s) => [String(s._id), s]));
   res.json(users.map((u) => ({ ...u, orders: by[u._id]?.orders || 0, spent: by[u._id]?.spent || 0, lastOrder: by[u._id]?.last })));
 });
-router.patch('/customers/:id', async (req, res) => {
+// Owner only: make someone an owner or a plain customer (staff roles are managed under /api/staff).
+router.patch('/customers/:id', admin, async (req, res) => {
   if (String(req.params.id) === String(req.user._id)) return res.status(400).json({ error: "You can't change your own role" });
   const role = req.body.role === 'admin' ? 'admin' : 'customer';
-  res.json(await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select('-password'));
+  res.json(await User.findByIdAndUpdate(req.params.id, { role, $unset: { staffRole: 1 } }, { new: true }).select('-password'));
 });
 
 /* ---------- CSV exports (open directly in Excel / Google Sheets) ---------- */
@@ -89,7 +90,7 @@ const range = (q) => {
   return Object.keys(f).length ? { createdAt: f } : {};
 };
 
-router.get('/export/:type', async (req, res) => {
+router.get('/export/:type', can('data'), async (req, res) => {
   const { type } = req.params;
   let csv;
   if (type === 'orders') {
@@ -128,27 +129,27 @@ router.get('/export/:type', async (req, res) => {
 });
 
 /* ---------- backups ---------- */
-router.get('/backup', async (_req, res) => {
+router.get('/backup', can('data'), async (_req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="ghorerbazar-backup-${dayKey(new Date())}.json"`);
   res.json(await backup.dump());
 });
-router.get('/backups', async (_req, res) => {
+router.get('/backups', can('data'), async (_req, res) => {
   const files = fs.existsSync(backup.DIR) ? fs.readdirSync(backup.DIR).filter((f) => f.endsWith('.json')).sort().reverse() : [];
   const s = await getSettings();
   res.json({ auto: s.backups?.auto !== false, lastAt: s.backups?.lastAt, dir: backup.DIR, files: files.map((f) => ({ name: f, size: fs.statSync(path.join(backup.DIR, f)).size })) });
 });
-router.post('/backups/now', async (_req, res) => {
+router.post('/backups/now', can('data'), async (_req, res) => {
   const file = await backup.saveToDisk();
   await Settings.updateOne({ key: 'store' }, { 'backups.lastAt': new Date() }); resetSettings();
   res.json({ file: path.basename(file) });
 });
-router.get('/backups/:name', (req, res) => {
+router.get('/backups/:name', can('data'), (req, res) => {
   const name = path.basename(req.params.name);
   const file = path.join(backup.DIR, name);
   if (!name.endsWith('.json') || !fs.existsSync(file)) return res.status(404).json({ error: 'Backup not found' });
   res.download(file);
 });
-router.post('/restore', async (req, res) => {
+router.post('/restore', admin, async (req, res) => {
   if (req.query.confirm !== 'RESTORE') return res.status(400).json({ error: 'Confirmation missing' });
   await backup.saveToDisk(); // safety copy of the current data first
   const counts = await backup.restore(req.body);
@@ -159,7 +160,7 @@ router.post('/restore', async (req, res) => {
 /* ---------- bulk product import (rows parsed from CSV in the browser) ----------
    Columns: name, category, price, salePrice, stock, unit, description, image, images (| separated),
    featured (yes/no), color, hex, size. Rows with the same name become one product with variants. */
-router.post('/import/products', async (req, res) => {
+router.post('/import/products', can('products'), async (req, res) => {
   const rows = Array.isArray(req.body.rows) ? req.body.rows.slice(0, 2000) : [];
   if (!rows.length) return res.status(400).json({ error: 'No rows found in the file' });
   const { Category } = require('../models');
@@ -196,8 +197,8 @@ router.post('/import/products', async (req, res) => {
 });
 
 /* ---------- e-mail ---------- */
-router.get('/emails', async (_req, res) => res.json({ configured: mailer.configured(), logs: await EmailLog.find().sort('-createdAt').limit(100) }));
-router.post('/emails/test', async (req, res) => {
+router.get('/emails', can('emails'), async (_req, res) => res.json({ configured: mailer.configured(), logs: await EmailLog.find().sort('-createdAt').limit(100) }));
+router.post('/emails/test', can('emails'), async (req, res) => {
   const to = req.body.to || req.user.email;
   if (!to) return res.status(400).json({ error: 'Enter an e-mail address to send the test to' });
   await mailer.testEmail(await getSettings(), to);
@@ -205,6 +206,6 @@ router.post('/emails/test', async (req, res) => {
 });
 
 /* ---------- audit ---------- */
-router.get('/audit', async (_req, res) => res.json(await AuditLog.find().sort('-createdAt').limit(200)));
+router.get('/audit', can('data'), async (_req, res) => res.json(await AuditLog.find().sort('-createdAt').limit(200)));
 
 module.exports = router;
