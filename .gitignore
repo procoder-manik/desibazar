@@ -1,0 +1,42 @@
+# dependencies
+node_modules/
+
+# env files (keep examples)
+.env
+.env.*
+!.env.example
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+next-env.d.ts
+
+# logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# local DB files
+*.sqlite
+mongodb-binaries/
+
+# database backups contain customer data and password hashes: never commit them
+backend/backups/
+*.backup.json
+ghorerbazar-backup-*.json
+.tmp/
+
+# stray large screenshots (the .webp copies in the repo root are used instead)
+backend/*.png
+frontend/*.png
+cloudflared*.exe
+
+# Cloudflare / Wrangler local state
+.wrangler/
+.open-next/
+.dev.vars
