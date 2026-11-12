@@ -322,3 +322,13 @@
 
 /* payment names keep their own spelling (bKash, Nagad) */
 .advance-box .seg button, .opc .seg button { text-transform: none; }
+
+/* label text with an On/Off pill on the same line */
+.lbl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+.lbl-top .pill-state { padding: 2px 9px; font-size: 11px; }
+
+/* page intro + main action button above admin tables */
+.admin-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+.admin-intro .lead { margin: 0; max-width: 780px; }
+.admin-intro .btn { flex: none; }
+@media (max-width: 680px) { .admin-intro { flex-direction: column; } }

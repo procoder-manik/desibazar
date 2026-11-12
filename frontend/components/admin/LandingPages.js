@@ -250,7 +250,7 @@ export default function LandingPages() {
 
   return (
     <>
-      <div className="row-title">
+      <div className="admin-intro">
         <p className="muted lead">One page per offer for your ads: photos, video, benefits, reviews and an order form on the same page. Buyers pick one or more products and order without a cart.</p>
         <button className="btn" onClick={() => setChoose(true)}><PlusIcon size={16} /> Create landing page</button>
       </div>

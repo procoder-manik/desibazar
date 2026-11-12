@@ -315,9 +315,9 @@ function Marketing({ full, onSaved }) {
         <h3>Google</h3>
         <p className="muted">Page views, product views, add to bag, checkout and purchases are sent automatically to every tag you fill in.</p>
         <div className="fields">
-          <label>Google Tag Manager <Ok on={!!base.gtmId} /><input value={v.gtmId} onChange={set('gtmId')} placeholder="GTM-XXXXXXX" /></label>
-          <label>Google Analytics 4 <Ok on={!!base.gaId} /><input value={v.gaId} onChange={set('gaId')} placeholder="G-XXXXXXXXXX" /></label>
-          <label>Google Ads conversion ID <Ok on={!!base.adsId} /><input value={v.adsId} onChange={set('adsId')} placeholder="AW-123456789" /></label>
+          <label><span className="lbl-top">Google Tag Manager <Ok on={!!base.gtmId} /></span><input value={v.gtmId} onChange={set('gtmId')} placeholder="GTM-XXXXXXX" /></label>
+          <label><span className="lbl-top">Google Analytics 4 <Ok on={!!base.gaId} /></span><input value={v.gaId} onChange={set('gaId')} placeholder="G-XXXXXXXXXX" /></label>
+          <label><span className="lbl-top">Google Ads conversion ID <Ok on={!!base.adsId} /></span><input value={v.adsId} onChange={set('adsId')} placeholder="AW-123456789" /></label>
           <label>Google Ads purchase label<input value={v.adsLabel} onChange={set('adsLabel')} placeholder="AbC-D_efG123" /></label>
           <p className="fine left full">Using Tag Manager for GA4 too? Leave the GA4 box empty so visits are not counted twice. Every event is also pushed to <code>dataLayer</code> in the GA4 e-commerce format for your GTM tags.</p>
         </div>
@@ -325,8 +325,8 @@ function Marketing({ full, onSaved }) {
       <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Meta (Facebook & Instagram)</h3>
         <div className="fields">
-          <label>Pixel ID <Ok on={!!base.fbPixelId} /><input value={v.fbPixelId} onChange={set('fbPixelId')} placeholder="123456789012345" /></label>
-          <label>Conversions API access token <Ok on={!!base.fbCapiSet} /><input type="password" autoComplete="off" value={v.fbCapiToken} onChange={set('fbCapiToken')} placeholder={base.fbCapiSet ? '•••••• saved (type to replace)' : 'Events Manager → Settings → Generate access token'} /></label>
+          <label><span className="lbl-top">Pixel ID <Ok on={!!base.fbPixelId} /></span><input value={v.fbPixelId} onChange={set('fbPixelId')} placeholder="123456789012345" /></label>
+          <label><span className="lbl-top">Conversions API access token <Ok on={!!base.fbCapiSet} /></span><input type="password" autoComplete="off" value={v.fbCapiToken} onChange={set('fbCapiToken')} placeholder={base.fbCapiSet ? '•••••• saved (type to replace)' : 'Events Manager → Settings → Generate access token'} /></label>
           <label>Test event code <small className="muted">(only while testing)</small><input value={v.fbTestCode} onChange={set('fbTestCode')} placeholder="TEST12345" /></label>
           <p className="fine left full">With the access token, every purchase is also sent from the server, so ads keep getting conversions when the browser blocks the pixel. Both carry the same event ID, so Meta counts each order once.</p>
         </div>
@@ -334,8 +334,8 @@ function Marketing({ full, onSaved }) {
       <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Other tracking</h3>
         <div className="fields">
-          <label>TikTok Pixel ID <Ok on={!!base.tiktokPixelId} /><input value={v.tiktokPixelId} onChange={set('tiktokPixelId')} placeholder="CABC123DEF456GHI789" /></label>
-          <label>Microsoft Clarity project ID <Ok on={!!base.clarityId} /><small className="muted"> (free heatmaps & recordings)</small><input value={v.clarityId} onChange={set('clarityId')} placeholder="abc123xyz" /></label>
+          <label><span className="lbl-top">TikTok Pixel ID <Ok on={!!base.tiktokPixelId} /></span><input value={v.tiktokPixelId} onChange={set('tiktokPixelId')} placeholder="CABC123DEF456GHI789" /></label>
+          <label><span className="lbl-top">Microsoft Clarity project ID<small className="muted"> (free heatmaps & recordings)</small> <Ok on={!!base.clarityId} /></span><input value={v.clarityId} onChange={set('clarityId')} placeholder="abc123xyz" /></label>
           <label className="full">Other head code <small className="muted">{owner ? '(any other tag, pasted as given; owner only)' : '(only the store owner can change this)'}</small>
             <textarea rows={3} value={v.headScripts} onChange={set('headScripts')} disabled={!owner} placeholder="<script>…</script>" spellCheck={false} />
           </label>

@@ -120,7 +120,7 @@ export default function Blog() {
 
   return (
     <>
-      <div className="row-title"><p className="muted lead">Write articles that bring Google visitors and point them to a product. Each post can target products; they appear as cards with Add to bag.</p><button className="btn" onClick={() => open(null)}><PlusIcon size={16} /> New post</button></div>
+      <div className="admin-intro"><p className="muted lead">Write articles that bring Google visitors and point them to a product. Each post can target products; they appear as cards with Add to bag.</p><button className="btn" onClick={() => open(null)}><PlusIcon size={16} /> New post</button></div>
       {err && <p className="err boxed">{err}</p>}
       <div className="tablewrap glass">
         <table>
