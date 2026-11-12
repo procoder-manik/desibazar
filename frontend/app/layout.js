@@ -13,6 +13,7 @@ import Analytics from '@/components/Analytics';
 import CompareBar from '@/components/CompareBar';
 import PromoPopup from '@/components/PromoPopup';
 import ChatWidgets from '@/components/ChatWidgets';
+import FloatingCart from '@/components/FloatingCart';
 
 // Site-wide SEO from Admin → SEO: default title, "%s | Store" template, description, sharing image and
 // the Google Search Console / Bing / Facebook verification tags.
@@ -84,6 +85,7 @@ export default async function RootLayout({ children }) {
           <CompareBar />
           <PromoPopup />
           <ChatWidgets />
+          <FloatingCart />
         </Providers>
         <Analytics ig={settings?.integrations || {}} />
       </body>

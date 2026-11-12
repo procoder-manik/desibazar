@@ -332,3 +332,13 @@
 .admin-intro .lead { margin: 0; max-width: 780px; }
 .admin-intro .btn { flex: none; }
 @media (max-width: 680px) { .admin-intro { flex-direction: column; } }
+
+/* floating bag button on the right edge */
+.float-cart { position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 45; display: grid; width: 84px; padding: 0; border: 0; border-radius: var(--r-sm) 0 0 var(--r-sm); overflow: hidden; cursor: pointer; font: inherit; box-shadow: -6px 10px 30px rgba(0, 0, 0, .14); transition: transform .25s var(--ease), width .25s var(--ease); }
+.float-cart:hover { width: 92px; }
+.float-cart .fc-top { display: grid; justify-items: center; gap: 4px; padding: 12px 6px 10px; background: var(--forest); color: #fff; }
+.float-cart .fc-top small { font-size: 12px; font-weight: 600; }
+.float-cart b { padding: 8px 4px; background: var(--surface); color: var(--forest-ink); font-size: 13.5px; text-align: center; }
+.float-cart.has .fc-top svg { animation: fc-bump .5s var(--ease); }
+@keyframes fc-bump { 50% { transform: scale(1.18); } }
+@media (max-width: 680px) { .float-cart { width: 66px; } .float-cart:hover { width: 66px; } .float-cart .fc-top { padding: 9px 4px 8px; } .float-cart b { font-size: 12px; } }

@@ -33,7 +33,7 @@ const seoView = (s) => {
 
 // Integration fields the storefront needs (never secrets like the Conversions API token).
 const PUBLIC_INTEGRATIONS = ['gaId', 'fbPixelId', 'gtmId', 'adsId', 'adsLabel', 'tiktokPixelId', 'clarityId', 'gscVerification', 'bingVerification', 'fbDomainVerification',
-  'headScripts', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'tidioKey', 'whatsapp', 'messenger'];
+  'headScripts', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'tidioKey', 'reveId', 'whatsapp', 'messenger'];
 
 function publicView(s) {
   const p = s.payments;
@@ -129,11 +129,12 @@ function integrationsOf(input, cur, owner) {
     fbDomainVerification: verify('fbDomainVerification'),
     // raw HTML in <head>: only the owner may change it
     headScripts: owner && input.headScripts !== undefined ? String(input.headScripts || '').slice(0, 20000) : cur.headScripts || '',
-    chat: ['none', 'tawk', 'crisp', 'tidio'].includes(input.chat) ? input.chat : cur.chat || 'none',
+    chat: ['none', 'tawk', 'crisp', 'tidio', 'reve'].includes(input.chat) ? input.chat : cur.chat || 'none',
     tawkProperty: pick('tawkProperty', /^[a-f0-9]{24}$/i, 'tawk.to Property ID is the 24-character code in your widget link'),
     tawkWidget: pick('tawkWidget', /^[a-z0-9]{1,20}$/i, 'tawk.to Widget ID looks like "default" or "1h2abc3de"') || 'default',
     crispId: pick('crispId', /^[a-f0-9-]{36}$/i, 'Crisp Website ID looks like xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'),
     tidioKey: pick('tidioKey', /^[a-z0-9]{20,40}$/i, 'Tidio public key is the 32-character code in your Tidio script link'),
+    reveId: pick('reveId', /^\d{4,12}$/, 'REVE Chat account ID is a number (the __revechat_account value in your widget code)'),
     whatsapp: pick('whatsapp', /^\+?\d{10,15}$/, 'WhatsApp number: digits with country code, e.g. 8801711000000').replace('+', ''),
     messenger: pick('messenger', /^[A-Za-z0-9.]{3,60}$/, 'Messenger: your Facebook page username'),
   };

@@ -1,4 +1,4 @@
-# নতুন ফিচার গাইড (বাংলা)
+﻿# নতুন ফিচার গাইড (বাংলা)
 
 সব কিছু Admin প্যানেল (`/admin`) থেকে চালানো যায়। কোনো কোড বদলাতে হবে না।
 
@@ -75,7 +75,7 @@ ID বসালেই চালু হয়:
 - **TikTok Pixel**, **Microsoft Clarity** (ফ্রি হিটম্যাপ)
 - **Other head code**: অন্য যেকোনো ট্যাগ (শুধু মালিক)
 - ইভেন্ট: PageView, ViewContent, AddToCart, InitiateCheckout, AddPaymentInfo, Purchase (সব পেজ ও ল্যান্ডিং পেজে)
-- **লাইভ চ্যাট**: Tidio, tawk.to, Crisp। Tidio এর জন্য Settings → Live chat → Installation থেকে public key দিন। সাথে WhatsApp ও Messenger বাটন।
+- **লাইভ চ্যাট**: Tidio, REVE Chat, tawk.to, Crisp। REVE Chat এর জন্য widget install code এর `__revechat_account` নাম্বারটি দিন। Tidio এর জন্য Settings → Live chat → Installation থেকে public key দিন। সাথে WhatsApp ও Messenger বাটন।
 
 ---
 

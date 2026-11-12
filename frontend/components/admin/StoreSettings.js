@@ -138,6 +138,12 @@ export function Appearance({ full, onSaved }) {
           <h3>Footer style</h3>
           <div className="seg">{Object.entries(FOOTERS).map(([k, l]) => <button key={k} className={(a.footer || 'classic') === k ? 'on' : ''} onClick={() => set({ footer: k })}>{l}</button>)}</div>
         </div>
+        <div className="glass co-card">
+          <div className="pay-row">
+            <div><b>Floating bag button</b><small>A bag button on the right edge of every page with the item count and total. Opens the bag in one click.</small></div>
+            <label className="switch"><input type="checkbox" checked={a.floatingCart !== false} onChange={(e) => set({ floatingCart: e.target.checked })} /><span /></label>
+          </div>
+        </div>
       </div>
       <SaveBar s={s} onSaved={onSaved} onReset={reset} />
     </>
@@ -288,7 +294,7 @@ export function Store({ full, onSaved }) {
 }
 
 // Tracking tags, live chat and floating chat buttons; the storefront loads whatever is filled in.
-const TRACK_KEYS = ['gtmId', 'gaId', 'adsId', 'adsLabel', 'fbPixelId', 'fbCapiToken', 'fbTestCode', 'tiktokPixelId', 'clarityId', 'headScripts', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'tidioKey', 'whatsapp', 'messenger'];
+const TRACK_KEYS = ['gtmId', 'gaId', 'adsId', 'adsLabel', 'fbPixelId', 'fbCapiToken', 'fbTestCode', 'tiktokPixelId', 'clarityId', 'headScripts', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'tidioKey', 'reveId', 'whatsapp', 'messenger'];
 const CHAT_DEFAULTS = { chat: 'none', tawkWidget: 'default' };
 
 function Marketing({ full, onSaved }) {
@@ -343,10 +349,16 @@ function Marketing({ full, onSaved }) {
       </div>
       <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Live chat</h3>
-        <p className="muted">Answer customers instantly from your phone. All three have a free plan.</p>
+        <p className="muted">Answer customers instantly from your phone. Pick one; each has a free plan or trial.</p>
         <div className="seg" style={{ marginBottom: 14 }}>
-          {[['none', 'Off'], ['tidio', 'Tidio'], ['tawk', 'tawk.to'], ['crisp', 'Crisp']].map(([k, l]) => <button key={k} className={v.chat === k ? 'on' : ''} onClick={() => setV({ ...v, chat: k })}>{l}</button>)}
+          {[['none', 'Off'], ['tidio', 'Tidio'], ['reve', 'REVE Chat'], ['tawk', 'tawk.to'], ['crisp', 'Crisp']].map(([k, l]) => <button key={k} className={v.chat === k ? 'on' : ''} style={{ textTransform: 'none' }} onClick={() => setV({ ...v, chat: k })}>{l}</button>)}
         </div>
+        {v.chat === 'reve' && (
+          <div className="fields one">
+            <label>REVE Chat account ID<input value={v.reveId} onChange={set('reveId')} placeholder="e.g. 1234567" /></label>
+            <p className="fine left">In REVE Chat: Settings → Website widget → Install code. Copy the number in <code>__revechat_account=&apos;…&apos;</code> and paste it here.</p>
+          </div>
+        )}
         {v.chat === 'tidio' && (
           <div className="fields one">
             <label>Tidio public key<input value={v.tidioKey} onChange={set('tidioKey')} placeholder="32-character key" /></label>

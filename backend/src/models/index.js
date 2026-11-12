@@ -292,6 +292,7 @@ const Settings = mongoose.model('Settings', new Schema({
     categories: { type: String, default: 'carousel' }, // carousel | grid | pills
     footer: { type: String, default: 'classic' },  // classic | minimal | dark | centered
     glass: { type: Number, default: 24 },
+    floatingCart: { type: Boolean, default: true }, // bag button fixed on the right edge
   },
   content: { type: Schema.Types.Mixed, default: () => JSON.parse(JSON.stringify(DEFAULT_CONTENT)) },
   shipping: {
@@ -354,8 +355,9 @@ const Settings = mongoose.model('Settings', new Schema({
     bingVerification: { type: String, default: '' },
     fbDomainVerification: { type: String, default: '' },
     headScripts: { type: String, default: '' }, // any other tag the owner wants in <head> (owner only)
-    chat: { type: String, default: 'none' },    // none | tawk | crisp | tidio
+    chat: { type: String, default: 'none' },    // none | tawk | crisp | tidio | reve
     tidioKey: { type: String, default: '' },
+    reveId: { type: String, default: '' },      // REVE Chat account id
     tawkProperty: { type: String, default: '' },
     tawkWidget: { type: String, default: 'default' },
     crispId: { type: String, default: '' },
