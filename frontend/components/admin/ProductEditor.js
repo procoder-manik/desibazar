@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useApp } from '../Providers';
 import { CloseIcon, PlusIcon, TrashIcon } from '../Icons';
 import { api } from '@/lib/api';
+import { SeoFields } from './Seo';
 
 const blank = { name: '', category: '', price: '', salePrice: '', stock: 0, unit: '1 kg', image: '', images: [], description: '', details: [], variants: [], featured: false, active: true };
 const emptyVariant = { color: '', hex: '#9fb59a', size: '', price: '', salePrice: '', stock: 0, image: '' };
@@ -113,6 +114,15 @@ export default function ProductEditor({ product, cats, onClose, onSaved }) {
                 <button className="iconbtn" onClick={() => del('details', i)} aria-label="Remove row"><TrashIcon size={15} /></button>
               </div>
             ))}
+          </section>
+
+          <section className="cf-sec">
+            <h3>SEO</h3>
+            <div className="fields">
+              <label className="full">URL slug <small className="muted">(/product/…, Bangla is fine)</small><input value={p.slug || ''} onChange={set('slug')} placeholder="Made from the name when empty" /></label>
+            </div>
+            <SeoFields value={p.seo || {}} onChange={(seo) => setP({ ...p, seo })} fallbackTitle={p.name} fallbackDescription={p.description} path={`/product/${p.slug || 'new-product'}`} />
+            {p.sourceUrl && <p className="fine left">Imported from <a className="link" href={p.sourceUrl} target="_blank" rel="noreferrer">{p.sourceUrl.replace(/^https?:\/\//, '').slice(0, 60)}</a></p>}
           </section>
         </div>
         <div className="modal-foot">

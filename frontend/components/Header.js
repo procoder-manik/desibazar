@@ -96,7 +96,7 @@ function Bar() {
               <Link href={user ? '/account' : '/login'} className="navlink">
                 <UserIcon size={19} /><span>{user ? user.name.split(' ')[0] : 'Sign in'}</span>
               </Link>
-              {user?.role === 'admin' && <Link href="/admin" className="navlink"><GridIcon size={18} /><span>Dashboard</span></Link>}
+              {user?.permissions?.length > 0 && <Link href="/admin" className="navlink"><GridIcon size={18} /><span>{user.role === 'admin' ? 'Dashboard' : 'Staff panel'}</span></Link>}
               <Link href="/compare" className="iconbtn hide-sm" aria-label={`Compare, ${compare.length} items`}><CompareIcon size={19} />{compare.length > 0 && <em>{compare.length}</em>}</Link>
               <Link href="/wishlist" className="iconbtn" aria-label={`Wishlist, ${wish.length} items`}>
                 <HeartIcon size={20} />{wish.length > 0 && <em>{wish.length}</em>}

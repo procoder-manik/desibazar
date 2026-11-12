@@ -11,6 +11,8 @@ import { BoltIcon, ChevronL, ChevronR, CompareIcon, HeartIcon, ReturnIcon, Shiel
 import { track } from '@/components/Analytics';
 import { api, taka } from '@/lib/api';
 import { priceInfo, vList, vPrice } from '@/lib/product';
+import { slugOf } from '@/lib/slug';
+import PostGrid from '@/components/PostGrid';
 
 const ACC = [
   ['Description', (p) => p.description || 'Pure and natural, carefully sourced.'],
@@ -53,7 +55,7 @@ function Gallery({ images, name, badge }) {
 }
 
 export default function ProductPage() {
-  const { slug } = useParams();
+  const slug = slugOf(useParams().slug);
   const { addToCart, buyNow, inWish, toggleWish, inCompare, toggleCompare, recent, addRecent, settings } = useApp();
   const FREE_OVER = settings.shipping.freeOver;
   const [d, setD] = useState(null);
@@ -61,14 +63,16 @@ export default function ProductPage() {
   const [qty, setQty] = useState(1);
   const [open, setOpen] = useState(0);
   const [error, setError] = useState('');
+  const [posts, setPosts] = useState([]);
 
-  const load = () => api('/products/' + slug).then(setD).catch((e) => setError(e.message));
+  const load = () => api('/products/' + encodeURIComponent(slug)).then(setD).catch((e) => setError(e.message));
   useEffect(() => { setD(null); setQty(1); setV(null); load(); }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!d?.product) return;
     addRecent(d.product);
-    document.title = d.product.name + ' · ' + (settings.store?.name || 'Ghorer Bazar');
-    track('view_item', { value: priceInfo(d.product).price, items: [{ item_id: d.product._id, item_name: d.product.name }] });
+    const price = priceInfo(d.product).price;
+    track('view_item', { value: price, items: [{ item_id: d.product._id, item_name: d.product.name, price, quantity: 1 }] });
+    api(`/posts?product=${d.product._id}&limit=3`).then((r) => setPosts(r.items)).catch(() => setPosts([]));
   }, [d, addRecent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error) return <div className="empty glass"><h3>Product not found</h3><p>{error}</p><Link href="/shop" className="btn">Back to shop</Link></div>;
@@ -145,6 +149,12 @@ export default function ProductPage() {
         <section className="sect">
           <div className="sect-head"><div><span className="eyebrow">Pairs well with</span><h2>You might also like</h2></div></div>
           <ProductRail items={related} />
+        </section>
+      )}
+      {posts.length > 0 && (
+        <section className="sect">
+          <div className="sect-head"><div><span className="eyebrow">From the journal</span><h2>Read before you buy</h2></div><Link href="/blog" className="link">All articles</Link></div>
+          <PostGrid posts={posts} />
         </section>
       )}
       {seen.length > 0 && (

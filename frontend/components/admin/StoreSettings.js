@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { applyAppearance, CARDS, CATEGORIES, FOOTERS, HEADERS, HEROES, LISTINGS, SHAPES, THEMES } from '@/lib/theme';
 
 // One save button per section; every section edits a slice of the settings document.
-function useSection(full, slice) {
+export function useSection(full, slice) {
   const { token, toast, setSettings } = useApp();
   const [v, setV] = useState(full[slice]);
   const [busy, setBusy] = useState(false);
@@ -24,7 +24,7 @@ function useSection(full, slice) {
   return { v, setV, busy, err, dirty, save };
 }
 
-function SaveBar({ s, onSaved, onReset }) {
+export function SaveBar({ s, onSaved, onReset }) {
   return (
     <div className="savebar">
       {s.err && <p className="err">{s.err}</p>}
@@ -217,6 +217,25 @@ export function Payments({ full, onSaved }) {
         {row('manual', 'Send Money (manual)', 'Customer sends money to your number and enters the transaction ID. You verify it in Orders.', <span className="pill-state">Manual</span>)}
       </div>
       <div className="glass co-card" style={{ marginTop: 16 }}>
+        <div className="pay-row">
+          <div><b>Cash on delivery: take an advance first</b><small>The customer pays the delivery charge (or a fixed amount) by bKash / Nagad / Rocket before the order is confirmed, and the rest to the rider. Cuts fake orders and returns.</small></div>
+          <span className={'pill-state' + (p.codAdvance?.enabled ? ' ok' : '')}>{p.codAdvance?.enabled ? 'On' : 'Off'}</span>
+          <label className="switch"><input type="checkbox" checked={!!p.codAdvance?.enabled} onChange={(e) => s.setV({ ...p, codAdvance: { type: 'delivery', amount: 0, note: '', ...p.codAdvance, enabled: e.target.checked } })} /><span /></label>
+        </div>
+        {p.codAdvance?.enabled && (
+          <div className="fields" style={{ marginTop: 12 }}>
+            <label>Advance amount
+              <select value={p.codAdvance.type || 'delivery'} onChange={(e) => s.setV({ ...p, codAdvance: { ...p.codAdvance, type: e.target.value } })}>
+                <option value="delivery">The delivery charge</option><option value="fixed">A fixed amount</option>
+              </select>
+            </label>
+            {p.codAdvance.type === 'fixed' && <label>Fixed amount (৳)<input type="number" min="1" value={p.codAdvance.amount || ''} onChange={(e) => s.setV({ ...p, codAdvance: { ...p.codAdvance, amount: +e.target.value } })} /></label>}
+            <label className="full">Message at checkout <small className="muted">(optional)</small><input value={p.codAdvance.note || ''} onChange={(e) => s.setV({ ...p, codAdvance: { ...p.codAdvance, note: e.target.value } })} placeholder="ডেলিভারি চার্জ অগ্রিম পরিশোধ করে অর্ডার কনফার্ম করুন। বাকি টাকা পণ্য হাতে পেয়ে দিবেন।" /></label>
+            <p className="fine left full">Customers can pay the advance to the Send Money numbers below{ig.bkash || ig.sslcommerz ? ', or online with bKash / SSLCommerz' : ''}. Verify it in Orders (manual) or it is verified automatically (online). Orders with free delivery need no advance when the type is “delivery charge”.</p>
+          </div>
+        )}
+      </div>
+      <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Send Money numbers</h3>
         <div className="fields three">
           {['bkash', 'nagad', 'rocket'].map((k) => (
@@ -268,29 +287,72 @@ export function Store({ full, onSaved }) {
   );
 }
 
-// Google Analytics 4 and Meta (Facebook) Pixel ids; the storefront loads them automatically.
+// Tracking tags, live chat and floating chat buttons; the storefront loads whatever is filled in.
+const TRACK_KEYS = ['gtmId', 'gaId', 'adsId', 'adsLabel', 'fbPixelId', 'fbCapiToken', 'fbTestCode', 'tiktokPixelId', 'clarityId', 'headScripts', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'tidioKey', 'whatsapp', 'messenger'];
+const CHAT_DEFAULTS = { chat: 'none', tawkWidget: 'default' };
+
 function Marketing({ full, onSaved }) {
-  const s = useSection(full, 'integrations');
-  const v = { gaId: '', fbPixelId: '', chat: 'none', tawkProperty: '', tawkWidget: 'default', crispId: '', whatsapp: '', messenger: '', ...(s.v || {}) };
-  const set = (k) => (e) => s.setV({ ...v, [k]: e.target.value.trim() });
-  const base = full.integrations || {};
-  const dirty = ['gaId', 'fbPixelId', 'chat', 'tawkProperty', 'tawkWidget', 'crispId', 'whatsapp', 'messenger'].some((k) => (v[k] || '') !== (base[k] || (k === 'chat' ? 'none' : k === 'tawkWidget' ? 'default' : '')));
+  const { user, token, toast, setSettings } = useApp();
+  const base = { ...Object.fromEntries(TRACK_KEYS.map((k) => [k, CHAT_DEFAULTS[k] || ''])), ...(full.integrations || {}) };
+  const [v, setV] = useState(base);
+  const [s, setS] = useState({ busy: false, err: '' });
+  useEffect(() => setV(base), [full]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (k) => (e) => setV({ ...v, [k]: k === 'headScripts' ? e.target.value : e.target.value.trim() });
+  const changed = TRACK_KEYS.filter((k) => (v[k] || '') !== (base[k] || ''));
+  // only send what changed; the Conversions API token is write-only
+  const save = async () => {
+    setS({ busy: true, err: '' });
+    try {
+      const pub = await api('/settings', { method: 'PUT', token, body: { integrations: Object.fromEntries(changed.map((k) => [k, v[k]])) } });
+      setSettings(pub); toast('Tracking & chat saved'); setS({ busy: false, err: '' }); onSaved?.();
+    } catch (e) { setS({ busy: false, err: e.message }); }
+  };
+  const owner = user?.role === 'admin';
+  const Ok = ({ on }) => (on ? <span className="pill-state ok"><CheckIcon size={13} />On</span> : <span className="pill-state off">Off</span>);
   return (
     <>
       <div className="glass co-card" style={{ marginTop: 16 }}>
-        <h3>Marketing & tracking</h3>
-        <p className="muted">Paste your IDs to track visits, add-to-cart, checkout and purchases. Leave empty to turn tracking off.</p>
+        <h3>Google</h3>
+        <p className="muted">Page views, product views, add to bag, checkout and purchases are sent automatically to every tag you fill in.</p>
         <div className="fields">
-          <label>Google Analytics 4 ID<input value={v.gaId} onChange={set('gaId')} placeholder="G-XXXXXXXXXX" /></label>
-          <label>Meta (Facebook) Pixel ID<input value={v.fbPixelId} onChange={set('fbPixelId')} placeholder="123456789012345" /></label>
+          <label>Google Tag Manager <Ok on={!!base.gtmId} /><input value={v.gtmId} onChange={set('gtmId')} placeholder="GTM-XXXXXXX" /></label>
+          <label>Google Analytics 4 <Ok on={!!base.gaId} /><input value={v.gaId} onChange={set('gaId')} placeholder="G-XXXXXXXXXX" /></label>
+          <label>Google Ads conversion ID <Ok on={!!base.adsId} /><input value={v.adsId} onChange={set('adsId')} placeholder="AW-123456789" /></label>
+          <label>Google Ads purchase label<input value={v.adsLabel} onChange={set('adsLabel')} placeholder="AbC-D_efG123" /></label>
+          <p className="fine left full">Using Tag Manager for GA4 too? Leave the GA4 box empty so visits are not counted twice. Every event is also pushed to <code>dataLayer</code> in the GA4 e-commerce format for your GTM tags.</p>
+        </div>
+      </div>
+      <div className="glass co-card" style={{ marginTop: 16 }}>
+        <h3>Meta (Facebook & Instagram)</h3>
+        <div className="fields">
+          <label>Pixel ID <Ok on={!!base.fbPixelId} /><input value={v.fbPixelId} onChange={set('fbPixelId')} placeholder="123456789012345" /></label>
+          <label>Conversions API access token <Ok on={!!base.fbCapiSet} /><input type="password" autoComplete="off" value={v.fbCapiToken} onChange={set('fbCapiToken')} placeholder={base.fbCapiSet ? '•••••• saved (type to replace)' : 'Events Manager → Settings → Generate access token'} /></label>
+          <label>Test event code <small className="muted">(only while testing)</small><input value={v.fbTestCode} onChange={set('fbTestCode')} placeholder="TEST12345" /></label>
+          <p className="fine left full">With the access token, every purchase is also sent from the server, so ads keep getting conversions when the browser blocks the pixel. Both carry the same event ID, so Meta counts each order once.</p>
+        </div>
+      </div>
+      <div className="glass co-card" style={{ marginTop: 16 }}>
+        <h3>Other tracking</h3>
+        <div className="fields">
+          <label>TikTok Pixel ID <Ok on={!!base.tiktokPixelId} /><input value={v.tiktokPixelId} onChange={set('tiktokPixelId')} placeholder="CABC123DEF456GHI789" /></label>
+          <label>Microsoft Clarity project ID <Ok on={!!base.clarityId} /><small className="muted"> (free heatmaps & recordings)</small><input value={v.clarityId} onChange={set('clarityId')} placeholder="abc123xyz" /></label>
+          <label className="full">Other head code <small className="muted">{owner ? '(any other tag, pasted as given; owner only)' : '(only the store owner can change this)'}</small>
+            <textarea rows={3} value={v.headScripts} onChange={set('headScripts')} disabled={!owner} placeholder="<script>…</script>" spellCheck={false} />
+          </label>
         </div>
       </div>
       <div className="glass co-card" style={{ marginTop: 16 }}>
         <h3>Live chat</h3>
-        <p className="muted">Answer customers instantly from your phone. Both options below have a free plan.</p>
+        <p className="muted">Answer customers instantly from your phone. All three have a free plan.</p>
         <div className="seg" style={{ marginBottom: 14 }}>
-          {[['none', 'Off'], ['tawk', 'tawk.to (free)'], ['crisp', 'Crisp']].map(([k, l]) => <button key={k} className={v.chat === k ? 'on' : ''} onClick={() => s.setV({ ...v, chat: k })}>{l}</button>)}
+          {[['none', 'Off'], ['tidio', 'Tidio'], ['tawk', 'tawk.to'], ['crisp', 'Crisp']].map(([k, l]) => <button key={k} className={v.chat === k ? 'on' : ''} onClick={() => setV({ ...v, chat: k })}>{l}</button>)}
         </div>
+        {v.chat === 'tidio' && (
+          <div className="fields one">
+            <label>Tidio public key<input value={v.tidioKey} onChange={set('tidioKey')} placeholder="32-character key" /></label>
+            <p className="fine left">In Tidio: Settings → Live chat → Installation → JavaScript. The script link looks like <code>code.tidio.co/YOUR_PUBLIC_KEY.js</code>; paste the part before <code>.js</code>.</p>
+          </div>
+        )}
         {v.chat === 'tawk' && (
           <div className="fields">
             <label>Property ID<input value={v.tawkProperty} onChange={set('tawkProperty')} placeholder="24-character code" /></label>
@@ -308,7 +370,8 @@ function Marketing({ full, onSaved }) {
       </div>
       <div className="savebar">
         {s.err && <p className="err">{s.err}</p>}
-        <button className="btn" disabled={!dirty || s.busy} onClick={() => s.save(onSaved)}>Save tracking & chat</button>
+        {changed.length > 0 && <span className="muted">Unsaved changes</span>}
+        <button className="btn" disabled={!changed.length || s.busy} onClick={save}>{s.busy ? 'Saving…' : 'Save tracking & chat'}</button>
       </div>
     </>
   );

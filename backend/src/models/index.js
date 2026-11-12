@@ -188,6 +188,7 @@ const LandingPage = mongoose.model('LandingPage', new Schema({
     note: String,                          // text above the form, e.g. advance delivery charge policy
     freeDelivery: { type: Boolean, default: false },
     thankYou: String,
+    lang: { type: String, enum: ['bn', 'en'], default: 'bn' }, // language of the order form labels
   },
   seo: seoSchema,
   views: { type: Number, default: 0 },

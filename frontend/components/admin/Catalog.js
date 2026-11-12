@@ -3,8 +3,37 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../Providers';
 import ProductEditor from './ProductEditor';
-import { EditIcon, TrashIcon } from '../Icons';
+import { CloseIcon, EditIcon, SearchIcon, TrashIcon } from '../Icons';
+import { SeoFields } from './Seo';
 import { api, taka } from '@/lib/api';
+
+// Category description (shown on its shop page) and SEO.
+function CategorySeo({ c, onClose, onSaved }) {
+  const { token, toast } = useApp();
+  const [v, setV] = useState({ description: c.description || '', slug: c.slug, seo: c.seo || {} });
+  const [err, setErr] = useState('');
+  const save = async () => {
+    try { await api('/categories/' + c._id, { method: 'PUT', token, body: { name: c.name, image: c.image, ...v } }); toast('Category saved'); onSaved(); }
+    catch (e) { setErr(e.message); }
+  };
+  return (
+    <div className="modal-wrap" role="dialog" aria-modal="true" aria-label="Category SEO">
+      <div className="scrim on" onClick={onClose} />
+      <div className="modal editor narrow">
+        <div className="modal-head"><div><span className="eyebrow">Category</span><h3>{c.name}</h3></div><button className="iconbtn" onClick={onClose} aria-label="Close"><CloseIcon /></button></div>
+        <div className="modal-body">
+          {err && <p className="err boxed">{err}</p>}
+          <div className="fields one">
+            <label>URL slug<input value={v.slug} onChange={(e) => setV({ ...v, slug: e.target.value })} /></label>
+            <label>Description <small className="muted">(shown above the products)</small><textarea rows={3} value={v.description} onChange={(e) => setV({ ...v, description: e.target.value })} /></label>
+          </div>
+          <SeoFields value={v.seo} onChange={(seo) => setV({ ...v, seo })} fallbackTitle={c.name} fallbackDescription={v.description} path={`/shop?category=${v.slug}`} />
+        </div>
+        <div className="modal-foot"><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn" onClick={save}>Save</button></div>
+      </div>
+    </div>
+  );
+}
 import { fmtDate } from '@/lib/format';
 
 const blankP = { name: '', category: '', price: '', salePrice: '', stock: '', unit: '1 kg', image: '', description: '', featured: false };
@@ -73,6 +102,7 @@ function Categories({ cats, onChange }) {
   const { token, toast } = useApp();
   const [name, setName] = useState('');
   const [err, setErr] = useState('');
+  const [seo, setSeo] = useState(null);
   const run = async (fn, msg) => { setErr(''); try { await fn(); toast(msg); onChange(); } catch (e) { setErr(e.message); } };
   return (
     <div className="glass co-card" style={{ marginTop: 16 }}>
@@ -83,6 +113,7 @@ function Categories({ cats, onChange }) {
           <div key={c._id} className="catrow">
             <input defaultValue={c.name} onBlur={(e) => e.target.value.trim() && e.target.value !== c.name && run(() => api('/categories/' + c._id, { method: 'PUT', token, body: { name: e.target.value.trim(), image: c.image } }), 'Category renamed')} />
             <input defaultValue={c.image || ''} placeholder="Image URL (optional)" onBlur={(e) => e.target.value !== (c.image || '') && run(() => api('/categories/' + c._id, { method: 'PUT', token, body: { name: c.name, image: e.target.value } }), 'Image saved')} />
+            <button className="btn ghost sm" onClick={() => setSeo(c)}><SearchIcon size={14} /> SEO</button>
             <button className="iconbtn" onClick={() => confirm(`Delete ${c.name}?`) && run(() => api('/categories/' + c._id, { method: 'DELETE', token }), 'Category deleted')} aria-label={`Delete ${c.name}`}><TrashIcon size={15} /></button>
           </div>
         ))}
@@ -91,6 +122,7 @@ function Categories({ cats, onChange }) {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New category name" style={{ flex: 1 }} />
         <button className="btn ghost">Add category</button>
       </form>
+      {seo && <CategorySeo c={seo} onClose={() => setSeo(null)} onSaved={() => { setSeo(null); onChange(); }} />}
     </div>
   );
 }

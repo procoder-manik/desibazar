@@ -7,6 +7,7 @@ import QuickCheckout from './QuickCheckout';
 import QuickView from './QuickView';
 import { track } from './Analytics';
 import { CheckIcon } from './Icons';
+import { captureSource } from '@/lib/attribution';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -56,6 +57,7 @@ export default function Providers({ children, initialSettings }) {
     setToken(t);
     if (t) api('/auth/me', { token: t }).then((r) => setUser(r.user)).catch(() => setToken(null));
     api('/settings').then(setSettings).catch(() => {});
+    captureSource(); // remember ad / UTM source for the order
     setReady(true);
   }, []);
   useEffect(() => { applyAppearance(settings.appearance); }, [settings.appearance]);

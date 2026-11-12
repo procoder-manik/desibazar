@@ -54,3 +54,10 @@ export function Stars({ value = 0, size = 14, count }) {
     </span>
   );
 }
+export const BookIcon = (p) => <I {...p}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z" /><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H20v3H6.5A2.5 2.5 0 0 1 4 20.5ZM8 7h8M8 10.5h6" /></I>;
+export const LayoutIcon = (p) => <I {...p}><rect x="3.5" y="3.5" width="17" height="17" rx="2" /><path d="M3.5 9h17M9 9v11.5" /></I>;
+export const PhoneIcon = (p) => <I {...p}><path d="M6.5 3.5h3l1.5 4-2 1.5a11 11 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2 2A16 16 0 0 1 4.5 5.5a2 2 0 0 1 2-2Z" /></I>;
+export const KeyIcon = (p) => <I {...p}><circle cx="8" cy="15" r="4" /><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2" /></I>;
+export const CopyIcon = (p) => <I {...p}><rect x="8.5" y="8.5" width="11" height="11" rx="2" /><path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5" /></I>;
+export const UpIcon = (p) => <I {...p}><path d="m6 15 6-6 6 6" /></I>;
+export const DownIcon = (p) => <I {...p}><path d="m6 9 6 6 6-6" /></I>;

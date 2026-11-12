@@ -1,8 +1,9 @@
-const SITE = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+import { SITE } from '@/lib/seo';
 
 export default function robots() {
   return {
-    rules: [{ userAgent: '*', allow: '/', disallow: ['/admin', '/account', '/checkout', '/orders', '/cart'] }],
+    rules: [{ userAgent: '*', allow: '/', disallow: ['/admin', '/account', '/checkout', '/orders', '/cart', '/*?preview=1'] }],
     sitemap: `${SITE}/sitemap.xml`,
+    host: SITE,
   };
 }

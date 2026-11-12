@@ -38,9 +38,9 @@ export function Customers() {
                 <td><a className="link" href={`tel:${c.phone}`}>{c.phone}</a>{c.email && <><br /><small className="muted">{c.email}</small></>}</td>
                 <td>{c.orders}</td><td><b>{taka(c.spent)}</b></td>
                 <td><small>{c.lastOrder ? fmtDate(c.lastOrder) : '–'}</small></td><td><small>{fmtDate(c.createdAt)}</small></td>
-                <td>{c._id === user?.id ? <span className="pill-state ok">you</span> : (
-                  <select className="statussel" value={c.role} onChange={(e) => role(c, e.target.value)}><option value="customer">customer</option><option value="admin">admin</option></select>
-                )}</td>
+                <td>{c._id === user?.id ? <span className="pill-state ok">you</span> : c.role === 'staff' ? <span className="pill-state">staff</span> : user?.role === 'admin' ? (
+                  <select className="statussel" value={c.role} onChange={(e) => role(c, e.target.value)}><option value="customer">customer</option><option value="admin">owner</option></select>
+                ) : <span className="pill-state">{c.role === 'admin' ? 'owner' : c.role}</span>}</td>
               </tr>
             ))}
           </tbody>

@@ -67,6 +67,30 @@ function OrderPanel({ o, couriers, steadfastReady, onSaved, onClose }) {
           {o.payment?.status === 'refunded' && <p className="fine left">Refunded ৳{o.payment.refundAmount || o.total}{o.payment.refundedAt ? ` on ${new Date(o.payment.refundedAt).toLocaleDateString('en-GB')}` : ''}. Change the status above to take it back (e.g. back to Paid).</p>}
           {o.payment?.status === 'submitted' && <button className="btn sm block" disabled={busy} onClick={() => patch({ paymentStatus: 'paid', ...(o.status === 'pending' && { status: 'confirmed' }) }, 'Payment verified')}>Verify payment & confirm</button>}
         </section>
+        {o.advance?.required && (
+          <section>
+            <h5>Advance · {PAY_LABELS[o.advance.method] || o.advance.method}</h5>
+            <div className="srow"><span>Amount</span><b>{taka(o.advance.amount)}</b></div>
+            <div className="srow"><span>Status</span>
+              <select value={o.advance.status} disabled={busy} onChange={(e) => patch({ advanceStatus: e.target.value }, 'Advance updated')} className="statussel">
+                {['unpaid', 'submitted', 'paid', 'failed'].map((p) => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            {o.advance.sender && <div className="srow"><span>Sent from</span><b>{o.advance.sender}</b></div>}
+            {o.advance.trxId && <div className="srow"><span>Transaction ID</span><code>{o.advance.trxId}</code></div>}
+            <div className="srow"><span>Rider collects</span><b>{taka(o.total - (o.advance.status === 'paid' ? o.advance.amount : 0))}</b></div>
+            {o.advance.status === 'submitted' && <button className="btn sm block" disabled={busy} onClick={() => patch({ advanceStatus: 'paid', ...(o.status === 'pending' && { status: 'confirmed' }) }, 'Advance verified')}>Verify advance & confirm</button>}
+          </section>
+        )}
+        {(o.source?.landingSlug || o.source?.utm?.source || o.source?.fbclid || o.source?.gclid || o.source?.referrer) && (
+          <section>
+            <h5>Source</h5>
+            {o.source.landingSlug && <div className="srow"><span>Landing page</span><a className="link" href={`/lp/${encodeURIComponent(o.source.landingSlug)}`} target="_blank" rel="noreferrer">/lp/{o.source.landingSlug}</a></div>}
+            {o.source.utm?.source && <div className="srow"><span>Campaign</span><b>{[o.source.utm.source, o.source.utm.medium, o.source.utm.campaign].filter(Boolean).join(' / ')}</b></div>}
+            {(o.source.fbclid || o.source.gclid) && <div className="srow"><span>Ad click</span><b>{o.source.fbclid ? 'Facebook / Instagram' : 'Google Ads'}</b></div>}
+            {o.source.referrer && <div className="srow"><span>Referrer</span><small>{o.source.referrer.replace(/^https?:\/\//, '').slice(0, 40)}</small></div>}
+          </section>
+        )}
         <section>
           <h5>Customer</h5>
           <p className="addr"><b>{o.shipping.name}</b> · <a className="link" href={`tel:${o.shipping.phone}`}>{o.shipping.phone}</a><br />{o.shipping.address}{o.shipping.district ? `, ${o.shipping.district}` : ''}<br /><small>{o.shipping.zoneName || o.shipping.area}</small>{o.shipping.note && <><br /><small>Note: {o.shipping.note}</small></>}</p>
@@ -149,7 +173,9 @@ export default function Orders({ initial = {}, couriers, steadfastReady, onChang
                 <td><b>{orderNo(o)}</b><br /><small className="muted">{fmtDate(o.createdAt)} · {o.items.reduce((s, i) => s + i.qty, 0)} items</small></td>
                 <td>{o.shipping?.name}<br /><small className="muted">{o.shipping?.phone} · {o.shipping?.district || o.shipping?.zoneName || o.shipping?.area}</small></td>
                 <td><b>{taka(o.total)}</b></td>
-                <td><small>{PAY_LABELS[o.paymentMethod] || o.paymentMethod}</small><br /><span className={'paystatus ' + o.payment?.status}>{o.payment?.status === 'submitted' ? 'verify' : o.payment?.status}</span></td>
+                <td><small>{PAY_LABELS[o.paymentMethod] || o.paymentMethod}</small><br /><span className={'paystatus ' + o.payment?.status}>{o.payment?.status === 'submitted' ? 'verify' : o.payment?.status}</span>
+                  {o.advance?.required && <><br /><span className={'paystatus ' + o.advance.status}>advance {o.advance.status === 'submitted' ? 'verify' : o.advance.status}</span></>}
+                  {o.source?.kind === 'landing' && <><br /><small className="muted">landing page</small></>}</td>
                 <td><small>{o.courier?.name ? (couriers.find((x) => x.key === o.courier.name)?.name || o.courier.name) : '–'}</small>{o.courier?.consignmentId && <><br /><small className="muted">{o.courier.consignmentId}</small></>}</td>
                 <td><span className={'status ' + o.status}>{o.status}</span></td>
               </tr>

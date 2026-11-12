@@ -8,7 +8,7 @@ A complete, white-label online store for Bangladeshi shops. Cash on delivery, bK
 | **API** | Node.js 18+ · Express 4 · Mongoose 8 · `backend/` |
 | **Database** | MongoDB (Atlas or self-hosted) |
 
-📘 **[USER_GUIDE.md](USER_GUIDE.md)**: how the shop owner runs the store · 🚀 **[DEPLOYMENT.md](DEPLOYMENT.md)**: put it on a server (Vercel / Render / VPS / cPanel)
+🆕 **[NEW_FEATURES_BN.md](NEW_FEATURES_BN.md)**: landing pages, COD advance, staff roles, SEO, tracking, blog, product importer (Bangla) · 📘 **[USER_GUIDE.md](USER_GUIDE.md)**: how the shop owner runs the store · 🚀 **[DEPLOYMENT.md](DEPLOYMENT.md)**: put it on a server (Vercel / Render / VPS / cPanel)
 
 ---
 

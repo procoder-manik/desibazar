@@ -19,6 +19,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 module.exports = {
+  distDir: process.env.NEXT_DIST_DIR || '.next', // lets a second build (e.g. a test copy) live next to the dev server
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

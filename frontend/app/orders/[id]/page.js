@@ -41,7 +41,11 @@ function Order() {
   const step = FLOW.findIndex(([s]) => s === o.status);
   const when = (s) => o.history?.find((h) => h.status === s)?.at;
   const online = ['sslcommerz', 'bkash'].includes(o.paymentMethod);
-  const canRetry = online && o.payment?.status !== 'paid' && o.status !== 'cancelled';
+  const adv = o.advance?.required ? o.advance : null;
+  const advOnline = adv && ['sslcommerz', 'bkash'].includes(adv.method) && adv.status !== 'paid';
+  const canRetry = ((online && o.payment?.status !== 'paid') || advOnline) && o.status !== 'cancelled';
+  const retryMethod = advOnline ? adv.method : o.paymentMethod;
+  const codDue = o.total - (adv?.status === 'paid' ? adv.amount : 0);
   const cancel = async () => {
     if (!confirm('Cancel this order?')) return;
     setBusy(true);
@@ -51,7 +55,7 @@ function Order() {
   };
   const retry = async () => {
     setBusy(true);
-    try { const r = await api(`/payments/${o.paymentMethod}/init`, { method: 'POST', token, body: { orderId: o._id, key } }); window.location.href = r.url; }
+    try { const r = await api(`/payments/${retryMethod}/init`, { method: 'POST', token, body: { orderId: o._id, key } }); window.location.href = r.url; }
     catch (e) { setError(e.message); setBusy(false); }
   };
 
@@ -64,7 +68,7 @@ function Order() {
           <span className="placed-ico"><CheckIcon size={26} /></span>
           <div>
             <h2>Thank you, your order is placed!</h2>
-            <p>We&apos;ll call {o.shipping.phone} to confirm.{o.paymentMethod === 'cod' ? ` Pay ${taka(o.total)} when it arrives.` : ''} {!token && 'Bookmark this page to track your order.'}</p>
+            <p>We&apos;ll call {o.shipping.phone} to confirm.{o.paymentMethod === 'cod' ? (adv && adv.status !== 'paid' ? ` Your order is confirmed once the ${taka(adv.amount)} advance is ${adv.status === 'submitted' ? 'verified' : 'paid'}; then pay ${taka(o.total - adv.amount)} to the rider.` : ` Pay ${taka(codDue)} when it arrives.`) : ''} {!token && 'Bookmark this page to track your order.'}</p>
           </div>
         </div>
       )}
@@ -116,7 +120,14 @@ function Order() {
             <div className="srow total"><span>Total</span><b>{taka(o.total)}</b></div>
             <div className="srow"><span>{PAY_LABELS[o.paymentMethod] || o.paymentMethod}</span><span className={'paystatus ' + o.payment?.status}>{o.payment?.status === 'submitted' ? 'verifying' : o.payment?.status}</span></div>
             {o.payment?.trxId && <p className="fine left">Transaction: {o.payment.trxId}</p>}
-            {canRetry && <button className="btn block" style={{ marginTop: 12 }} onClick={retry} disabled={busy}>Pay {taka(o.total)} now</button>}
+            {adv && (
+              <>
+                <div className="srow"><span>Advance ({PAY_LABELS[adv.method] || adv.method})</span><span className={'paystatus ' + adv.status}>{adv.status === 'submitted' ? 'verifying' : adv.status} · {taka(adv.amount)}</span></div>
+                {adv.trxId && <p className="fine left">Advance transaction: {adv.trxId}</p>}
+                {o.paymentMethod === 'cod' && <div className="srow"><span>Pay the rider</span><b>{taka(o.total - adv.amount)}</b></div>}
+              </>
+            )}
+            {canRetry && <button className="btn block" style={{ marginTop: 12 }} onClick={retry} disabled={busy}>Pay {taka(advOnline ? adv.amount : o.total)} now</button>}
           </div>
           <div className="summary glass" style={{ marginTop: 16 }}>
             <h4>Delivering to</h4>

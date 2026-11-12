@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { api, taka } from '@/lib/api';
 
-export const metadata = { title: 'Help & FAQ' };
+import { buildMeta } from '@/lib/seo';
+
+export async function generateMetadata() {
+  return buildMeta({ pageKey: 'help', path: '/help', fallback: { title: 'Help & FAQ' } });
+}
 
 const FAQ = [
   ['How do I know the honey is pure?', 'We buy directly from beekeepers and farms we know, and batches are checked before they are packed.'],

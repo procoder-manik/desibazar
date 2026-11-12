@@ -14,14 +14,16 @@ export default function ChatWidgets() {
   if (path.startsWith('/admin')) return null;
   const tawk = ig.chat === 'tawk' && /^[a-f0-9]{24}$/i.test(ig.tawkProperty || '');
   const crisp = ig.chat === 'crisp' && /^[a-f0-9-]{36}$/i.test(ig.crispId || '');
+  const tidio = ig.chat === 'tidio' && /^[a-z0-9]{20,40}$/i.test(ig.tidioKey || '');
   const wa = /^\d{10,15}$/.test(ig.whatsapp || '') ? ig.whatsapp : null;
   const ms = /^[A-Za-z0-9.]{3,60}$/.test(ig.messenger || '') ? ig.messenger : null;
   return (
     <>
       {tawk && <Script id="tawk" strategy="lazyOnload">{`var Tawk_API=Tawk_API||{},Tawk_LoadStart=new Date();(function(){var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];s1.async=true;s1.src='https://embed.tawk.to/${ig.tawkProperty}/${/^[a-z0-9]{1,20}$/i.test(ig.tawkWidget || '') ? ig.tawkWidget : 'default'}';s1.charset='UTF-8';s1.setAttribute('crossorigin','*');s0.parentNode.insertBefore(s1,s0);})();`}</Script>}
+      {tidio && <Script id="tidio" strategy="lazyOnload" src={`https://code.tidio.co/${ig.tidioKey.toLowerCase()}.js`} />}
       {crisp && <Script id="crisp" strategy="lazyOnload">{`window.$crisp=[];window.CRISP_WEBSITE_ID="${ig.crispId}";(function(){var d=document;var s=d.createElement("script");s.src="https://client.crisp.chat/l.js";s.async=1;d.getElementsByTagName("head")[0].appendChild(s);})();`}</Script>}
       {(wa || ms) && (
-        <div className={'float-chat' + (tawk || crisp ? ' above' : '')}>
+        <div className={'float-chat' + (tawk || crisp || tidio ? ' above' : '')}>
           {ms && <a href={`https://m.me/${ms}`} target="_blank" rel="noreferrer" className="fc messenger" aria-label="Chat on Messenger"><Messenger /></a>}
           {wa && <a href={`https://wa.me/${wa}?text=${encodeURIComponent('Hello! I have a question about my order.')}`} target="_blank" rel="noreferrer" className="fc whatsapp" aria-label="Chat on WhatsApp"><WhatsApp /></a>}
         </div>

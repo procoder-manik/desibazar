@@ -1,12 +1,16 @@
 'use client';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp } from './Providers';
 import { FreeBar, QtyStepper } from './CartDrawer';
 import { ShieldIcon, TagIcon, TruckIcon } from './Icons';
+import AdvancePay from './AdvancePay';
+import { track, gaItem } from './Analytics';
 import { api, taka } from '@/lib/api';
 import { DIVISIONS, PAY_LABELS, validPhone, zoneFor } from '@/lib/bd';
+import { saveLead } from '@/lib/attribution';
+import { advanceDue, placeOrder } from '@/lib/placeOrder';
 
 // Shared by the /checkout page and the quick-checkout pop-up.
 export default function CheckoutForm({ compact = false, onDone }) {
@@ -22,24 +26,34 @@ export default function CheckoutForm({ compact = false, onDone }) {
   const [f, setF] = useState({ name: '', phone: '', email: '', district: '', zone: zones[0]?.key || '', address: '', note: '' });
   const [method, setMethod] = useState(methods[0] || 'cod');
   const [trx, setTrx] = useState({ sender: '', trxId: '' });
+  const [adv, setAdv] = useState({});
   const [save, setSave] = useState(true);
   const [code, setCode] = useState('');
   const [coupon, setCoupon] = useState(null);
   const [couponMsg, setCouponMsg] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const began = useRef(false);
 
   const subtotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
   const discount = coupon?.discount || 0;
   const fee = feeFor(subtotal, f.zone);
   const total = subtotal - discount + fee;
   const manualNo = method.startsWith('manual_') ? pay.manual?.[method.replace('manual_', '')] : null;
+  const advance = advanceDue(pay, method, fee, total);
 
   useEffect(() => {
     if (user) setF((x) => ({ ...x, name: x.name || user.name || '', phone: x.phone || user.phone || '', email: x.email || user.email || '', address: x.address || user.address || '' }));
   }, [user]);
   useEffect(() => { if (!methods.includes(method) && methods[0]) setMethod(methods[0]); }, [methods, method]);
   useEffect(() => { setCoupon(null); setCouponMsg(''); }, [subtotal]);
+  useEffect(() => {
+    if (began.current || !cart.length) return;
+    began.current = true;
+    track('begin_checkout', { value: subtotal, items: cart.map(gaItem) });
+  }, [cart, subtotal]);
+  // incomplete-order capture: saved once the phone number is valid
+  useEffect(() => { saveLead({ ...f, items: cart.map((i) => ({ ...i, product: i._id })) }); }, [f.name, f.phone, f.address, f.district, cart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const on = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const pickDistrict = (e) => {
@@ -59,22 +73,21 @@ export default function CheckoutForm({ compact = false, onDone }) {
     setError('');
     if (!validPhone(f.phone)) return setError('Enter a valid mobile number, e.g. 01712345678');
     if (manualNo && (!trx.sender || !trx.trxId)) return setError('Enter the number you paid from and the transaction ID');
+    const advMethod = adv.method || (advance ? Object.keys(pay.manual || {}).map((k) => `manual_${k}`)[0] || (pay.bkash ? 'bkash' : pay.sslcommerz ? 'sslcommerz' : '') : '');
+    if (advance && advMethod.startsWith('manual_') && (!adv.sender || !adv.trxId)) return setError(`Send the ${taka(advance)} advance and enter the number you paid from and the transaction ID`);
     setBusy(true);
     try {
-      const o = await api('/orders', { method: 'POST', token, body: {
-        items: cart.map((i) => ({ product: i._id, variant: i.variant, qty: i.qty })), shipping: f, coupon: coupon?.code,
-        paymentMethod: method, saveAddress: save, ...(manualNo ? trx : {}),
-      } });
+      await placeOrder({
+        token, toast, router,
+        body: {
+          items: cart.map((i) => ({ product: i._id, variant: i.variant, qty: i.qty })), shipping: f, coupon: coupon?.code,
+          paymentMethod: method, saveAddress: save, ...(manualNo ? trx : {}),
+          ...(advance ? { advanceMethod: advMethod, advanceSender: adv.sender, advanceTrxId: adv.trxId } : {}),
+        },
+        sourceExtra: { kind: compact ? 'quick' : 'store' },
+      });
       clearCart();
       onDone?.();
-      if (method === 'sslcommerz' || method === 'bkash') {
-        toast('Redirecting to secure payment...');
-        const r = await api(`/payments/${method}/init`, { method: 'POST', token, body: { orderId: o._id, key: o.accessKey } });
-        window.location.href = r.url;
-        return;
-      }
-      toast('Order placed successfully');
-      router.push(`/orders/${o._id}?key=${o.accessKey}&placed=1`);
     } catch (err) { setError(err.message); setBusy(false); }
   };
 
@@ -121,12 +134,13 @@ export default function CheckoutForm({ compact = false, onDone }) {
           <div className="options">
             {methods.map((m) => (
               <label key={m} className={'option' + (method === m ? ' on' : '')}>
-                <input type="radio" name="pay" value={m} checked={method === m} onChange={() => setMethod(m)} />
+                <input type="radio" name="pay" value={m} checked={method === m} onChange={() => { setMethod(m); track('add_payment_info', { value: total, items: cart.map(gaItem) }); }} />
                 <span className={'paylogo ' + m.replace('manual_', '')}>{m === 'cod' ? '৳' : m === 'sslcommerz' ? 'SSL' : m.replace('manual_', '').slice(0, 1).toUpperCase()}</span>
-                <span><b>{PAY_LABELS[m]}</b><small>{m === 'cod' ? 'Pay the rider when it arrives' : m === 'sslcommerz' ? 'Visa, Mastercard, Amex, bKash, Nagad, Rocket, net banking' : m === 'bkash' ? 'Pay instantly with your bKash account' : `Send money to ${pay.manual[m.replace('manual_', '')]}`}</small></span>
+                <span><b>{PAY_LABELS[m]}</b><small>{m === 'cod' ? (pay.codAdvance?.enabled ? 'Pay a small advance now, the rest to the rider' : 'Pay the rider when it arrives') : m === 'sslcommerz' ? 'Visa, Mastercard, Amex, bKash, Nagad, Rocket, net banking' : m === 'bkash' ? 'Pay instantly with your bKash account' : `Send money to ${pay.manual[m.replace('manual_', '')]}`}</small></span>
               </label>
             ))}
           </div>
+          {advance > 0 && <AdvancePay pay={pay} amount={advance} value={adv} onChange={setAdv} />}
           {manualNo && (
             <div className="manual-pay">
               <p>Send <b>{taka(total)}</b> to <b className="mono-num">{manualNo}</b> using <b>Send Money</b>, then enter the details below. We confirm your order after checking the payment.</p>
@@ -164,6 +178,7 @@ export default function CheckoutForm({ compact = false, onDone }) {
           {discount > 0 && <div className="srow ok"><span>Discount ({coupon.code})</span><b>−{taka(discount)}</b></div>}
           <div className="srow"><span>Delivery</span><b>{fee ? taka(fee) : 'Free'}</b></div>
           <div className="srow total"><span>Total</span><b>{taka(total)}</b></div>
+          {advance > 0 && <><div className="srow ok"><span>Pay now (advance)</span><b>{taka(advance)}</b></div><div className="srow"><span>Pay the rider</span><b>{taka(total - advance)}</b></div></>}
           {error && <p className="err boxed">{error}</p>}
           <button className="btn lg block" disabled={busy}>
             {busy ? 'Placing order...' : method === 'sslcommerz' || method === 'bkash' ? `Pay ${taka(total)}` : `Place order · ${taka(total)}`}

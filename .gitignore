@@ -8,6 +8,7 @@ node_modules/
 
 # Next.js build output
 frontend/.next/
+frontend/.next-*/
 frontend/out/
 next-env.d.ts
 

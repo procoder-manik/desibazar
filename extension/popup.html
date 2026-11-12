@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Product importer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <img src="icons/32.png" alt="" />
+    <div><b>Product importer</b><small id="who">Not connected</small></div>
+    <button id="logout" class="link" hidden>Sign out</button>
+  </header>
+
+  <!-- 1. connect to the store -->
+  <section id="connect" hidden>
+    <p class="muted">Connect to your store once. Use an owner or staff account that can manage products.</p>
+    <label>Store API address<input id="api" placeholder="https://api.yourshop.com/api" /></label>
+    <label>Store website <small>(for "open product" links)</small><input id="site" placeholder="https://yourshop.com" /></label>
+    <label>Mobile number<input id="phone" inputmode="tel" placeholder="01XXXXXXXXX" /></label>
+    <label>Password<input id="password" type="password" /></label>
+    <button id="login" class="btn">Connect</button>
+  </section>
+
+  <!-- 2. read the page and edit before importing -->
+  <section id="work" hidden>
+    <div id="status" class="muted">Reading this page…</div>
+    <form id="form" hidden>
+      <label>Name<input id="name" required /></label>
+      <div class="row">
+        <label>Price (৳)<input id="price" type="number" min="1" step="any" required /></label>
+        <label>Sale price<input id="salePrice" type="number" min="0" step="any" placeholder="optional" /></label>
+      </div>
+      <p id="currency" class="warn" hidden></p>
+      <div class="row">
+        <label>Category<select id="category"></select></label>
+        <label>Stock<input id="stock" type="number" min="0" value="20" /></label>
+      </div>
+      <label id="newCatWrap" hidden>New category name<input id="newCat" /></label>
+      <label>Unit / pack<input id="unit" placeholder="e.g. 1 kg, 500 ml, 1 pc" value="1 pc" /></label>
+      <label>Description<textarea id="description" rows="4"></textarea></label>
+      <div class="imgs-head"><b>Images</b> <small class="muted">click to skip · first ticked = main</small> <button type="button" id="toggleAll" class="link">none</button></div>
+      <div id="images" class="imgs"></div>
+      <div id="variantsWrap" hidden><b>Options found</b> <small class="muted" id="variantsInfo"></small>
+        <label class="check"><input type="checkbox" id="useVariants" checked /> Import them as options</label>
+      </div>
+      <label class="check"><input type="checkbox" id="active" /> Show in the shop right away</label>
+      <p id="error" class="err" hidden></p>
+      <button class="btn" id="import">Import to store</button>
+    </form>
+    <div id="done" hidden>
+      <p class="ok">✓ Imported <b id="doneName"></b></p>
+      <a id="openProduct" class="btn ghost" target="_blank">Open product</a>
+      <a id="openAdmin" class="btn ghost" target="_blank">Edit in admin</a>
+    </div>
+  </section>
+
+  <script src="extract.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

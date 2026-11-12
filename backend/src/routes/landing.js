@@ -43,7 +43,7 @@ async function body(b, id) {
     sections: sectionsOf(b.sections), products,
     checkout: {
       mode: c.mode === 'single' ? 'single' : 'multi', title: str(c.title, 160) || 'Fill in the form to order', button: str(c.button, 60) || 'Confirm order',
-      allowQty: c.allowQty !== false, coupon: c.coupon !== false, note: str(c.note, 1000) || '', freeDelivery: !!c.freeDelivery, thankYou: str(c.thankYou, 1000) || '',
+      allowQty: c.allowQty !== false, coupon: c.coupon !== false, note: str(c.note, 1000) || '', freeDelivery: !!c.freeDelivery, thankYou: str(c.thankYou, 1000) || '', lang: c.lang === 'en' ? 'en' : 'bn',
     },
     seo: seoOf(b.seo) || {},
   };

@@ -7,7 +7,7 @@ import { FREE_OVER, taka } from '@/lib/api';
 const cols = [
   ['Shop', [['All products', '/shop'], ['Honey', '/shop?category=honey'], ['Dates', '/shop?category=dates'], ['Ghee & Oil', '/shop?category=ghee-oil'], ['On sale', '/shop?sale=true']]],
   ['Account', [['My account', '/account'], ['My orders', '/orders'], ['Wishlist', '/wishlist'], ['Compare', '/compare'], ['Bag', '/cart']]],
-  ['Help', [['Delivery info', '/help#delivery'], ['Returns & refunds', '/help#returns'], ['Payment', '/help#payment'], ['FAQ', '/help#faq']]],
+  ['Help', [['Blog & guides', '/blog'], ['Delivery info', '/help#delivery'], ['Returns & refunds', '/help#returns'], ['Payment', '/help#payment'], ['FAQ', '/help#faq']]],
 ];
 
 export const perks = (freeOver = FREE_OVER) => [
