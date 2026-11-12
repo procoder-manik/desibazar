@@ -11,6 +11,7 @@ function normalise(body) {
   delete b.rating; delete b.numReviews; delete b.sold; delete b._id;
   if (b.slug) b.slug = slugify(b.slug);
   if (b.seo) b.seo = seoOf(b.seo);
+  if (b.advanceShipping !== undefined && !['default', 'require', 'exempt'].includes(b.advanceShipping)) b.advanceShipping = 'default';
   if (Array.isArray(b.images)) b.images = b.images.map(String).filter(Boolean).slice(0, 12);
   if (Array.isArray(b.variants)) {
     b.variants = b.variants.filter((v) => v && String(v.label || v.color || v.size || '').trim()).map((v) => ({

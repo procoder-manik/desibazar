@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const router = require('express').Router();
 const { Order, Product, Coupon, User, LandingPage, ORDER_STATUSES, PAYMENT_METHODS } = require('../models');
 const { auth, can, optionalAuth, permissionsOf } = require('../middleware/auth');
-const { getSettings, deliveryFee, couponDiscount, advanceFor } = require('../pricing');
+const { getSettings, deliveryFee, couponDiscount, advanceFor, advanceRequired } = require('../pricing');
+const fraud = require('../fraud');
 const { steadfast, COURIERS } = require('../gateways');
 const { str, isId } = require('../util');
 const { convert: convertLeads } = require('./leads');
@@ -20,6 +21,13 @@ const giveBack = (l) => (l.variant
   : Product.updateOne({ _id: l.product }, { $inc: { stock: l.qty, sold: -l.qty } }));
 const restock = (order) => Promise.all(order.items.map(giveBack));
 const normPhone = (p) => String(p || '').replace(/[\s-]/g, '').replace(/^\+?88/, '');
+// Fraud score, reasons, IP and internal notes are for staff only.
+const view = (o, req) => {
+  if (permissionsOf(req.user).includes('orders')) return o;
+  const x = o.toObject ? o.toObject() : { ...o };
+  delete x.risk; delete x.adminNote;
+  return x;
+};
 const canSee = (o, req) =>
   (req.user && (String(o.user) === String(req.user._id) || permissionsOf(req.user).includes('orders'))) ||
   (req.query.key && o.accessKey && req.query.key === o.accessKey);
@@ -92,7 +100,8 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
 
   // Cash on delivery with an advance (delivery charge or fixed amount) paid now.
   const total = subtotal - discount + ship.fee;
-  const advanceAmount = advanceFor(settings, paymentMethod, ship.fee, total);
+  const required = advanceRequired(settings, products.filter((p) => lines.some((l) => String(l.product) === String(p._id))));
+  const advanceAmount = advanceFor(settings, paymentMethod, ship.fee, total, required);
   let advance = { required: false, amount: 0 };
   if (advanceAmount > 0) {
     const m = String(req.body.advanceMethod || '');
@@ -104,6 +113,16 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
     advance = okManual
       ? { required: true, amount: advanceAmount, method: m, status: 'submitted', trxId: str(req.body.advanceTrxId, 40).trim().toUpperCase(), sender: normPhone(req.body.advanceSender) }
       : { required: true, amount: advanceAmount, method: m, status: 'unpaid' };
+  }
+
+  // fraud check before any stock is taken
+  const verdict = await fraud.check(settings, {
+    phone: normPhone(shipping.phone), email: shipping.email, ip: req.ip, ua: req.get('user-agent'), name: shipping.name, address: shipping.address,
+    items: lines, total, honeypot: req.body.website,
+  });
+  if (verdict.action === 'block') {
+    fraud.logBlocked({ phone: normPhone(shipping.phone), email: shipping.email, ip: req.ip, name: shipping.name, ua: req.get('user-agent'), total }, verdict);
+    return res.status(403).json({ error: 'We could not accept this order online. Please call us to place it.' });
   }
 
   // reserve stock atomically; roll back if any line fails
@@ -131,6 +150,7 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
       ? { status: 'submitted', trxId: req.body.trxId.trim(), sender: normPhone(req.body.sender), amount: total }
       : { status: 'unpaid' },
     advance,
+    risk: { score: verdict.score, level: verdict.action === 'review' ? 'review' : 'ok', reasons: verdict.reasons, ip: req.ip, ua: str(req.get('user-agent'), 200) },
     source: {
       kind: landing ? 'landing' : src.kind === 'quick' ? 'quick' : 'store', landing: landing?._id, landingSlug: landing?.slug, utm,
       referrer: str(src.referrer, 300), fbclid: str(src.fbclid, 300), gclid: str(src.gclid, 300),
@@ -146,11 +166,19 @@ router.post('/', require('../security').limits.order, optionalAuth, async (req, 
   adminNewOrder(settings, order);
   convertLeads(order, str(req.body.leadKey, 64));
   capi.purchase(settings, order, req); // Meta Conversions API (server-side), deduplicated with the browser pixel
-  res.status(201).json(order);
+  res.status(201).json(view(order, req));
+});
+
+// Does this bag need the advance delivery charge? Used by checkout to show the payment box before the order is placed.
+router.post('/advance-check', async (req, res) => {
+  const ids = (Array.isArray(req.body.items) ? req.body.items : []).map((i) => i.product).filter(isId).slice(0, 50);
+  const settings = await getSettings();
+  const products = await Product.find({ _id: { $in: ids } }).select('advanceShipping').lean();
+  res.json({ required: advanceRequired(settings, products) });
 });
 
 router.get('/mine', auth, async (req, res) =>
-  res.json(await Order.find({ user: req.user._id }).select('-accessKey').sort('-createdAt')));
+  res.json(await Order.find({ user: req.user._id }).select('-accessKey -risk -adminNote').sort('-createdAt')));
 
 /* ---------- admin: dashboard numbers ---------- */
 router.get('/stats', auth, can('dashboard', 'orders'), async (_req, res) => {
@@ -190,6 +218,7 @@ router.get('/', auth, can('orders'), async (req, res) => {
   const f = {};
   if (status) f.status = status;
   if (payment) f['payment.status'] = payment;
+  if (req.query.risk === 'review') { f['risk.level'] = 'review'; f['risk.reviewed'] = { $ne: true }; }
   if (q) {
     const s = String(q).trim().replace(/^#/, '');
     const re = new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
@@ -208,7 +237,7 @@ router.get('/', auth, can('orders'), async (req, res) => {
 router.get('/:id', optionalAuth, async (req, res) => {
   const o = await Order.findById(req.params.id).catch(() => null);
   if (!o || !canSee(o, req)) return res.status(404).json({ error: 'Order not found' });
-  res.json(o);
+  res.json(view(o, req));
 });
 
 // customers (or guests holding the key) may cancel while pending
@@ -221,14 +250,15 @@ router.patch('/:id/cancel', optionalAuth, async (req, res) => {
   await o.save();
   await restock(o);
   orderEmail(await getSettings(), o, 'cancelled');
-  res.json(o);
+  res.json(view(o, req));
 });
 
 /* ---------- admin: update status / payment / courier / note ---------- */
 router.patch('/:id', auth, can('orders'), async (req, res) => {
   const o = await Order.findById(req.params.id);
   if (!o) return res.status(404).json({ error: 'Order not found' });
-  const { status, paymentStatus, courier, adminNote, refundAmount, note, advanceStatus } = req.body;
+  const { status, paymentStatus, courier, adminNote, refundAmount, note, advanceStatus, riskReviewed } = req.body;
+  if (riskReviewed !== undefined) o.risk = { ...(o.toObject().risk || {}), reviewed: !!riskReviewed };
   const CLOSED = ['cancelled', 'returned'];
   const events = [];
 

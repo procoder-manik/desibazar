@@ -32,10 +32,26 @@ function couponDiscount(c, subtotal) {
 
 module.exports = { getSettings, resetSettings, deliveryFee, couponDiscount };
 
-// Advance to collect now for a cash-on-delivery order (0 when the feature is off or nothing is due).
-function advanceFor(settings, method, fee, total) {
-  const a = settings.payments?.codAdvance;
-  if (method !== 'cod' || !a?.enabled) return 0;
+// Advance delivery charge settings (Shipping → Advance delivery charge). Falls back to the older Payments switch.
+function advanceConfig(settings) {
+  const a = settings.shipping?.advance;
+  if (a?.enabled) return { enabled: true, scope: a.scope === 'products' ? 'products' : 'all', type: a.type === 'fixed' ? 'fixed' : 'delivery', amount: a.amount || 0, note: a.note || '' };
+  const old = settings.payments?.codAdvance;
+  if (old?.enabled) return { enabled: true, scope: 'all', type: old.type === 'fixed' ? 'fixed' : 'delivery', amount: old.amount || 0, note: old.note || '' };
+  return { enabled: false, scope: a?.scope === 'products' ? 'products' : 'all', type: a?.type === 'fixed' ? 'fixed' : 'delivery', amount: a?.amount || 0, note: a?.note || '' };
+}
+
+// Does an order with these products need the advance? Each product follows the store setting, or is forced on / off.
+function advanceRequired(settings, products) {
+  const a = advanceConfig(settings);
+  if (!a.enabled) return false;
+  return products.some((p) => p.advanceShipping === 'require' || (a.scope === 'all' && p.advanceShipping !== 'exempt'));
+}
+
+// Advance to collect now for a cash-on-delivery order (0 when it is off, not required or nothing is due).
+function advanceFor(settings, method, fee, total, required) {
+  if (method !== 'cod' || !required) return 0;
+  const a = advanceConfig(settings);
   const amt = a.type === 'fixed' ? Number(a.amount) || 0 : fee;
   return Math.max(0, Math.min(Math.round(amt), total));
 }
@@ -44,4 +60,6 @@ function advanceFor(settings, method, fee, total) {
 const dueOnline = (o) => (o.paymentMethod === 'cod' && o.advance?.required && o.advance.status !== 'paid' ? o.advance.amount : o.total);
 
 module.exports.advanceFor = advanceFor;
+module.exports.advanceConfig = advanceConfig;
+module.exports.advanceRequired = advanceRequired;
 module.exports.dueOnline = dueOnline;

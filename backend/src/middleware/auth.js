@@ -9,6 +9,7 @@ const PERMISSIONS = {
   customers: 'Customers',
   products: 'Products, categories & import',
   coupons: 'Coupons',
+  fraud: 'Fraud protection & blocklist',
   blog: 'Blog posts',
   landing: 'Landing pages',
   content: 'Home page content & pop-ups',

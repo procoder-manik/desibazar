@@ -68,6 +68,8 @@ const Product = mongoose.model('Product', new Schema({
   sold: { type: Number, default: 0 },
   seo: seoSchema,
   sourceUrl: String, // where the product was imported from (Chrome extension)
+  // Cash on delivery advance: "default" follows Shipping → Advance delivery charge, "require" always asks, "exempt" never asks.
+  advanceShipping: { type: String, enum: ['default', 'require', 'exempt'], default: 'default' },
 }, { timestamps: true }));
 
 const reviewSchema = new Schema({
@@ -142,6 +144,14 @@ const Order = mongoose.model('Order', new Schema({
   status: { type: String, enum: ORDER_STATUSES, default: 'pending', index: true },
   history: [{ status: String, note: String, at: { type: Date, default: Date.now } }],
   adminNote: String,
+  // Result of the fraud check made when the order was placed.
+  risk: {
+    score: { type: Number, default: 0 },
+    level: { type: String, enum: ['ok', 'review'], default: 'ok' },
+    reasons: [String],
+    ip: String, ua: String,
+    reviewed: { type: Boolean, default: false },
+  },
 }, { timestamps: true }));
 
 // Blog posts. Each post can target products: they are shown as cards in and below the article,
@@ -197,13 +207,34 @@ const LandingPage = mongoose.model('LandingPage', new Schema({
 // Incomplete checkouts: the customer typed a valid phone number but did not place the order.
 const Lead = mongoose.model('Lead', new Schema({
   key: { type: String, index: true, unique: true },     // browser session id, so one visitor = one lead
-  name: String, phone: { type: String, index: true }, address: String, district: String,
+  name: String, phone: { type: String, index: true }, email: { type: String, lowercase: true, trim: true }, address: String, district: String,
+  user: { type: Schema.Types.ObjectId, ref: 'User' },
+  stage: { type: String, enum: ['cart', 'checkout'], default: 'checkout' }, // cart = added to bag only, checkout = started the form
+  recoverToken: { type: String, index: true },
+  emailedAt: Date, emailCount: { type: Number, default: 0 },
+  lastSeenAt: Date,
   items: [{ product: { type: Schema.Types.ObjectId, ref: 'Product' }, name: String, qty: Number, price: Number, variantLabel: String }],
   total: Number,
   source: { type: String, default: 'store' }, landing: { type: Schema.Types.ObjectId, ref: 'LandingPage' }, landingSlug: String,
   status: { type: String, enum: ['open', 'called', 'converted', 'lost'], default: 'open', index: true },
   note: String,
   order: { type: Schema.Types.ObjectId, ref: 'Order' },
+}, { timestamps: true }));
+
+// Phones, IP addresses and e-mails that may not place orders.
+const Blocklist = mongoose.model('Blocklist', new Schema({
+  type: { type: String, enum: ['phone', 'ip', 'email'], required: true },
+  value: { type: String, required: true, trim: true, lowercase: true },
+  reason: { type: String, maxlength: 200 },
+  by: String,
+}, { timestamps: true }));
+Blocklist.schema.index({ type: 1, value: 1 }, { unique: true });
+
+// Every order attempt the fraud check stopped, so the owner can see what was blocked and why.
+const FraudLog = mongoose.model('FraudLog', new Schema({
+  phone: String, email: String, ip: String, name: String, ua: String,
+  score: Number, reasons: [String], action: { type: String, enum: ['blocked'], default: 'blocked' },
+  total: Number,
 }, { timestamps: true }));
 
 const Subscriber = mongoose.model('Subscriber', new Schema({
@@ -297,6 +328,14 @@ const Settings = mongoose.model('Settings', new Schema({
   content: { type: Schema.Types.Mixed, default: () => JSON.parse(JSON.stringify(DEFAULT_CONTENT)) },
   shipping: {
     freeOver: { type: Number, default: 3000 },
+    // Take the delivery charge (or a fixed amount) in advance on cash on delivery orders.
+    advance: {
+      enabled: { type: Boolean, default: false },
+      scope: { type: String, enum: ['all', 'products'], default: 'all' }, // all products, or only products marked "require"
+      type: { type: String, enum: ['delivery', 'fixed'], default: 'delivery' },
+      amount: { type: Number, default: 0, min: 0 },
+      note: { type: String, default: '' },
+    },
     zones: {
       type: [{ key: String, name: String, fee: Number, eta: String, active: { type: Boolean, default: true } }],
       default: [
@@ -305,6 +344,16 @@ const Settings = mongoose.model('Settings', new Schema({
         { key: 'outside', name: 'Outside Dhaka', fee: 120, eta: '2-4 days' },
       ],
     },
+  },
+  // Fraud protection applied to every new order.
+  fraud: {
+    enabled: { type: Boolean, default: true },
+    flagScore: { type: Number, default: 40 },        // at or above: order is placed but marked "needs review"
+    blockScore: { type: Number, default: 80 },       // at or above: order is refused
+    maxOrdersPerPhone: { type: Number, default: 3 }, // active orders from one phone in 24 hours
+    maxOrdersPerIp: { type: Number, default: 5 },    // orders from one network in 1 hour
+    blockFakePhones: { type: Boolean, default: true },
+    badHistory: { type: Number, default: 3 },        // cancelled / returned orders from one phone before it is blocked
   },
   // Store-wide SEO. pages.<key> overrides the title / description / image of one storefront page.
   seo: {
@@ -340,6 +389,8 @@ const Settings = mongoose.model('Settings', new Schema({
     refunded: { type: Boolean, default: true },
     adminNewOrder: { type: Boolean, default: true },
     adminEmail: { type: String, default: '' },
+    abandoned: { type: Boolean, default: true },     // e-mail people who left items in the bag
+    abandonedDelay: { type: Number, default: 0 },    // minutes to wait first; 0 = send immediately
   },
   integrations: {
     gaId: { type: String, default: '' },        // Google Analytics 4, e.g. G-XXXXXXX
@@ -368,6 +419,6 @@ const Settings = mongoose.model('Settings', new Schema({
 }, { timestamps: true, minimize: false }));
 
 module.exports = {
-  User, Role, Category, Product, Review, Coupon, Order, Subscriber, Settings, EmailLog, AuditLog, Popup, Post, LandingPage, Lead,
+  Blocklist, FraudLog, User, Role, Category, Product, Review, Coupon, Order, Subscriber, Settings, EmailLog, AuditLog, Popup, Post, LandingPage, Lead,
   ORDER_STATUSES, PAYMENT_METHODS, DEFAULT_CONTENT,
 };

@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { auth, permissionsOf, isStaff } = require('../middleware/auth');
-const { getSettings, resetSettings } = require('../pricing');
+const { getSettings, resetSettings, advanceConfig } = require('../pricing');
 const { ssl, bkash, steadfast, COURIERS } = require('../gateways');
 const mailer = require('../mailer');
 const { DEFAULT_CONTENT, Coupon } = require('../models');
@@ -18,7 +18,7 @@ const OPTIONS = {
 // Storefront pages whose title / description / image can be set in Admin → SEO.
 const SEO_PAGES = ['home', 'shop', 'blog', 'help', 'cart', 'checkout', 'login', 'register', 'wishlist', 'compare'];
 // Which permission is needed to save each part of the settings.
-const SLICE_PERM = { store: 'store', appearance: 'appearance', shipping: 'shipping', payments: 'payments', content: 'content', emails: 'emails', integrations: 'store', backups: 'data', seo: 'seo' };
+const SLICE_PERM = { store: 'store', appearance: 'appearance', shipping: 'shipping', payments: 'payments', content: 'content', emails: 'emails', integrations: 'store', backups: 'data', seo: 'seo', fraud: 'fraud' };
 
 // merge saved content over the defaults so newly added fields always exist
 const contentOf = (s) => {
@@ -43,13 +43,13 @@ function publicView(s) {
     appearance: s.appearance,
     content: contentOf(s),
     seo: seoView(s),
-    shipping: { freeOver: s.shipping.freeOver, zones: s.shipping.zones.filter((z) => z.active !== false) },
+    shipping: { freeOver: s.shipping.freeOver, zones: s.shipping.zones.filter((z) => z.active !== false), advance: advanceConfig(s) },
     payments: {
       cod: p.cod,
       sslcommerz: p.sslcommerz && ssl.configured(),
       bkash: p.bkash && bkash.configured(),
       manual: p.manual ? Object.fromEntries(Object.entries(p.manualNumbers || {}).filter(([, v]) => v)) : {},
-      codAdvance: { enabled: !!p.codAdvance?.enabled, type: p.codAdvance?.type || 'delivery', amount: p.codAdvance?.amount || 0, note: p.codAdvance?.note || '' },
+      codAdvance: advanceConfig(s), // set in Shipping → Advance delivery charge
     },
     integrations: Object.fromEntries(PUBLIC_INTEGRATIONS.map((k) => [k, ig[k] || (k === 'chat' ? 'none' : k === 'tawkWidget' ? 'default' : '')])),
   };
@@ -165,7 +165,7 @@ router.put('/settings', auth, async (req, res) => {
   }
   const s = await getSettings();
   const cur = s.toObject();
-  const { store, appearance, shipping, payments, content, emails, integrations, backups, seo } = req.body;
+  const { store, appearance, shipping, payments, content, emails, integrations, backups, seo, fraud } = req.body;
 
   if (appearance) {
     for (const k of Object.keys(OPTIONS)) if (appearance[k] && !OPTIONS[k].includes(appearance[k])) return res.status(400).json({ error: `Unknown ${k}: ${appearance[k]}` });
@@ -202,20 +202,40 @@ router.put('/settings', auth, async (req, res) => {
         keys.add(z.key);
       }
     }
-    s.shipping = { ...cur.shipping, ...shipping };
+    let advance = cur.shipping.advance;
+    if (shipping.advance) {
+      const a = { ...(advance || {}), ...shipping.advance };
+      advance = { enabled: !!a.enabled, scope: a.scope === 'products' ? 'products' : 'all', type: a.type === 'fixed' ? 'fixed' : 'delivery', amount: Math.max(0, Math.round(Number(a.amount) || 0)), note: String(a.note || '').slice(0, 300) };
+      if (advance.enabled && advance.type === 'fixed' && !advance.amount) return res.status(400).json({ error: 'Enter the fixed advance amount' });
+      s.set('payments.codAdvance.enabled', false); // the older Payments switch is replaced by this one
+    }
+    s.shipping = { ...cur.shipping, ...shipping, advance };
   }
   if (payments) {
-    const a = { ...(cur.payments.codAdvance || {}), ...(payments.codAdvance || {}) };
-    const codAdvance = { enabled: !!a.enabled, type: a.type === 'fixed' ? 'fixed' : 'delivery', amount: Math.max(0, Math.round(Number(a.amount) || 0)), note: String(a.note || '').slice(0, 300) };
-    if (codAdvance.enabled && codAdvance.type === 'fixed' && !codAdvance.amount) return res.status(400).json({ error: 'Enter the fixed advance amount' });
-    s.payments = { ...cur.payments, ...payments, codAdvance, manualNumbers: { ...cur.payments.manualNumbers, ...(payments.manualNumbers || {}) } };
+    const { codAdvance: _ignored, ...rest } = payments;
+    s.payments = { ...cur.payments, ...rest, manualNumbers: { ...cur.payments.manualNumbers, ...(payments.manualNumbers || {}) } };
+  }
+  if (shipping || payments) {
+    const adv = advanceConfig(s);
     const p = s.payments;
-    const canAdvance = p.manual && Object.values(p.manualNumbers || {}).some(Boolean) || (p.bkash && bkash.configured()) || (p.sslcommerz && ssl.configured());
-    if (codAdvance.enabled && !canAdvance) return res.status(400).json({ error: 'To take an advance, add a bKash / Nagad / Rocket Send Money number (or connect bKash / SSLCommerz) first' });
+    const canAdvance = (p.manual && Object.values(p.manualNumbers || {}).some(Boolean)) || (p.bkash && bkash.configured()) || (p.sslcommerz && ssl.configured());
+    if (adv.enabled && !canAdvance) return res.status(400).json({ error: 'To take an advance, add a bKash / Nagad / Rocket Send Money number in Payments (or connect bKash / SSLCommerz) first' });
+  }
+  if (fraud) {
+    const f = { ...(cur.fraud || {}), ...fraud };
+    const n = (v, min, max, d) => { const x = Math.round(Number(v)); return Number.isFinite(x) ? Math.min(max, Math.max(min, x)) : d; };
+    const out = {
+      enabled: !!f.enabled, blockFakePhones: !!f.blockFakePhones,
+      flagScore: n(f.flagScore, 5, 99, 40), blockScore: n(f.blockScore, 10, 100, 80),
+      maxOrdersPerPhone: n(f.maxOrdersPerPhone, 1, 50, 3), maxOrdersPerIp: n(f.maxOrdersPerIp, 1, 100, 5), badHistory: n(f.badHistory, 1, 20, 3),
+    };
+    if (out.flagScore >= out.blockScore) return res.status(400).json({ error: 'The review score must be lower than the block score' });
+    s.fraud = out;
   }
   if (emails) {
     if (emails.adminEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emails.adminEmail)) return res.status(400).json({ error: 'Admin e-mail is not valid' });
-    s.emails = { ...cur.emails, ...emails };
+    const delay = Math.min(1440, Math.max(0, Math.round(Number(emails.abandonedDelay ?? cur.emails.abandonedDelay) || 0)));
+    s.emails = { ...cur.emails, ...emails, abandonedDelay: delay };
   }
   if (integrations) s.integrations = integrationsOf(integrations, cur.integrations || {}, req.user.role === 'admin');
   if (seo) { s.seo = seoOf(seo, cur.seo || {}); s.markModified('seo'); }

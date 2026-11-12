@@ -91,14 +91,16 @@ const STATUS_COPY = {
 };
 
 async function send({ to, subject, html, event, order }) {
-  if (!to) return;
+  if (!to) return 'skipped';
   const t = getTransport();
-  if (!t) { await EmailLog.create({ to, subject, event, order, status: 'skipped', error: 'SMTP not configured' }); return; }
+  if (!t) { await EmailLog.create({ to, subject, event, order, status: 'skipped', error: 'SMTP not configured' }); return 'skipped'; }
   try {
     await t.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to, subject, html });
     await EmailLog.create({ to, subject, event, order, status: 'sent' });
+    return 'sent';
   } catch (e) {
     await EmailLog.create({ to, subject, event, order, status: 'failed', error: e.message });
+    return 'failed';
   }
 }
 
@@ -142,6 +144,24 @@ function accountEmail(settings, user, event) {
   });
 }
 
+// "You left something in your bag" reminder with a link that restores the bag. Returns 'sent' | 'skipped' | 'failed'.
+async function abandonedEmail(settings, lead) {
+  const accent = THEME_ACCENT[settings.appearance?.theme] || '#2f4a3a';
+  const name = esc(String(lead.name || '').split(' ')[0] || 'there');
+  const rows = (lead.items || []).map((i) => `<tr>
+    <td style="padding:10px 0;border-bottom:1px solid #eceee8;font-size:14px">${esc(i.name)}${i.variantLabel ? `<br><span style="color:#7c857e;font-size:12px">${esc(i.variantLabel)}</span>` : ''}</td>
+    <td style="padding:10px 0;border-bottom:1px solid #eceee8;font-size:14px;text-align:center;color:#4a544d">${i.qty}</td>
+    <td style="padding:10px 0;border-bottom:1px solid #eceee8;font-size:14px;text-align:right">${tk(i.price * i.qty)}</td></tr>`).join('');
+  const body = `<table role="presentation" width="100%" style="border:1px solid #eceee8;border-radius:18px;padding:14px 20px;border-collapse:separate">${rows}
+    <tr><td colspan="2" style="padding:12px 0 2px;font-weight:700">Total</td><td style="padding:12px 0 2px;text-align:right;font-weight:700;color:${accent}">${tk(lead.total)}</td></tr></table>`;
+  const title = 'You left something in your bag';
+  const intro = `Hi ${name}, your items are still waiting. Stock is limited, so finish your order while they are available. Cash on delivery is available across Bangladesh.`;
+  return send({
+    to: lead.email, event: 'abandoned', subject: `${title} · ${settings.store?.name || ''}`.trim(),
+    html: layout(settings, { preheader: 'Your bag is saved. Complete your order in one click.', title, intro, body, cta: { href: `${clientUrl()}/checkout?recover=${lead.recoverToken}`, label: 'Complete my order' } }),
+  });
+}
+
 // Sends a sample so admins can check SMTP and the design.
 async function testEmail(settings, to) {
   const t = getTransport();
@@ -150,4 +170,4 @@ async function testEmail(settings, to) {
   await t.sendMail({ from: process.env.MAIL_FROM || process.env.SMTP_USER, to, subject: 'Test e-mail · your store design', html: layout(settings, { title: 'This is how your e-mails look', intro: 'If you can read this, SMTP works. Below is the invoice block customers receive.', body: invoiceHtml(sample) }) });
 }
 
-module.exports = { configured, orderEmail, adminNewOrder, accountEmail, testEmail };
+module.exports = { configured, orderEmail, adminNewOrder, accountEmail, abandonedEmail, testEmail };

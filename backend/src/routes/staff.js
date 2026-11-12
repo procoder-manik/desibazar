@@ -7,7 +7,7 @@ const { auth, admin, PERMISSIONS } = require('../middleware/auth');
 router.use(auth, admin);
 
 const PRESETS = [
-  { name: 'Order manager', description: 'Confirms, ships and follows up orders', permissions: ['dashboard', 'orders', 'leads', 'customers'] },
+  { name: 'Order manager', description: 'Confirms, ships and follows up orders', permissions: ['dashboard', 'orders', 'leads', 'customers', 'fraud'] },
   { name: 'Order checker', description: 'Checks and calls new and incomplete orders', permissions: ['orders', 'leads'] },
   { name: 'Product manager', description: 'Adds and edits products, prices and stock', permissions: ['products', 'coupons'] },
   { name: 'Marketing', description: 'Landing pages, blog, SEO and offers', permissions: ['dashboard', 'landing', 'blog', 'seo', 'content', 'coupons'] },
